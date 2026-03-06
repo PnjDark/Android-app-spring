@@ -1,18 +1,10 @@
 
 import 'dart:io';
 
-// ==================== EXTENSION METHODS ====================
-
 extension DoubleFormatting on double {
   String format([int digits = 2]) => toStringAsFixed(digits);
 }
 
-// ==================== DATA CLASSES ====================
-
-/**
- * Represents a student with their personal information and grades
- * Using nullable types where data might be missing
- */
 class Student {
   final String id;
   final String name;
@@ -32,13 +24,11 @@ class Student {
   String toString() => 'Student(id: $id, name: $name)';
 }
 
-/**
- * Represents an assignment with its details
- */
+
 class Assignment {
   final String name;
   final double maxScore;
-  final double weight; // Weight as decimal (e.g., 0.2 for 20%)
+  final double weight; 
   final String? dueDate;
   final String? description;
   
@@ -51,9 +41,7 @@ class Assignment {
   });
 }
 
-/**
- * Represents a student's grade for a specific assignment
- */
+
 class Grade {
   final String studentId;
   final String assignmentName;
@@ -73,11 +61,7 @@ class Grade {
   double get percentage => score ?? 0.0;
 }
 
-// ==================== CORE FUNCTIONS ====================
 
-/**
- * Calculates letter grade from percentage
- */
 String toLetterGrade(double percentage) {
   if (percentage >= 90) return 'A';
   if (percentage >= 80) return 'B';
@@ -97,10 +81,7 @@ String getGradeDescription(double percentage) {
   return 'Failing';
 }
 
-/**
- * Calculates the final grade for a student based on all assignments
- * Uses null-aware operators for safety
- */
+
 double? calculateFinalGrade({
   required String studentId,
   required List<Assignment> assignments,
@@ -145,23 +126,16 @@ double? calculateFinalGrade({
   return totalWeight > 0 ? (totalWeightedScore / totalWeight) * 100 : null;
 }
 
-// ==================== HIGHER-ORDER FUNCTIONS ====================
 
-/**
- * Process a list of grades with a custom operation
- */
 List<T> processGrades<T>(List<Grade> grades, T Function(Grade) operation) {
   return grades.map(operation).toList();
 }
 
-/**
- * Filter grades based on a predicate
- */
+
 List<Grade> filterGrades(List<Grade> grades, bool Function(Grade) predicate) {
   return grades.where(predicate).toList();
 }
 
-// ==================== MAIN DEMONSTRATION ====================
 
 void main() {
   print('🎓 STUDENT GRADE CALCULATOR (DART VERSION)');
