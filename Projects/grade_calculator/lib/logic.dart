@@ -16,7 +16,7 @@ String getGradeDescription(double percentage) {
   if (percentage >= 60) return 'Needs Improvement';
   return 'Failing';
 }
-
+//removed
 // Color getGradeColor(double percentage) {
 //   if (percentage >= 90) return Color(0xFF2E7D32);  // Dark Green
 //   if (percentage >= 80) return Color(0xFF558B2F);  // Light Green
