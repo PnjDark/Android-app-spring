@@ -68,6 +68,15 @@ class _GradeManagementScreenState extends State<GradeManagementScreen> {
   String? successMessage;
   double? finalPercentage;
   
+  Color getGradeColor(double percentage) {
+  if (percentage >= 90) return Color(0xFF2E7D32);  // Dark Green
+  if (percentage >= 80) return Color(0xFF558B2F);  // Light Green
+  if (percentage >= 70) return Color(0xFFF57C00);  // Orange
+  if (percentage >= 60) return Color(0xFFE65100);  // Deep Orange
+  return Color(0xFFC62828);  // Red
+}
+
+
   // Controllers
   final TextEditingController scoreController = TextEditingController();
   
