@@ -1,258 +1,180 @@
 import 'package:flutter/material.dart';
-import 'models.dart';
-import 'logic.dart';
 
-void main() {
-  runApp(StudentGradeApp());
+// ==================== CLASS 01: DATA CLASSES (Minimal) ====================
+class Student {
+  final String id, name;
+  const Student(this.id, this.name);
+  @override
+  String toString() => name;
 }
 
-class StudentGradeApp extends StatelessWidget {
+class Assignment {
+  final String name;
+  final double max, weight;
+  const Assignment(this.name, this.max, this.weight);
+}
+
+class Grade {
+  final String studentId, assignment;
+  final double? score;
+  const Grade(this.studentId, this.assignment, this.score);
+}
+
+// ==================== CLASS 01: EXTENSION METHODS ====================
+extension DoubleExt on double {
+  String get f => toStringAsFixed(1);
+  String get letter => switch (this) {
+    >= 90 => 'A',
+    >= 80 => 'B',
+    >= 70 => 'C',
+    >= 60 => 'D',
+    _ => 'F'
+  };
+  
+  Color get color => switch (this) {
+    >= 90 => Colors.green,
+    >= 80 => Colors.lightGreen,
+    >= 70 => Colors.orange,
+    >= 60 => Colors.deepOrange,
+    _ => Colors.red,
+  };
+}
+
+// ==================== CLASS 03: GENERIC FUNCTIONS ====================
+double? calculateGrade(String studentId, List<Assignment> assignments, List<Grade> grades) {
+  final studentGrades = grades.where((g) => g.studentId == studentId).toList();
+  if (studentGrades.isEmpty) return null;
+  
+  double totalWeightedScore = 0.0;
+  double totalWeight = 0.0;
+  
+  for (var assignment in assignments) {
+    final grade = studentGrades.firstWhere(
+      (g) => g.assignment == assignment.name,
+      orElse: () => Grade(studentId, assignment.name, null),
+    );
+    
+    final score = grade.score ?? 0.0;
+    totalWeightedScore += score * assignment.weight;
+    totalWeight += assignment.weight;
+  }
+  
+  return totalWeight > 0 ? (totalWeightedScore / totalWeight) : null;
+}
+
+// ==================== MAIN APP ====================
+void main() => runApp(const GradeApp());
+
+class GradeApp extends StatelessWidget {
+  const GradeApp({super.key});
+  
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Student Grade Manager',
+      title: 'Grade Calculator',
       theme: ThemeData(
-        primarySwatch: Colors.blue,
         useMaterial3: true,
-        inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          filled: true,
-          fillColor: Colors.white,
-        ),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
       ),
-      home: GradeManagementScreen(),
+      home: const GradeScreen(),
     );
   }
 }
 
-class GradeManagementScreen extends StatefulWidget {
+class GradeScreen extends StatefulWidget {
+  const GradeScreen({super.key});
+  
   @override
-  _GradeManagementScreenState createState() => _GradeManagementScreenState();
+  State<GradeScreen> createState() => _GradeScreenState();
 }
 
-class _GradeManagementScreenState extends State<GradeManagementScreen> {
-  // Data
-  final List<Student> students = [
-    Student(id: 'S001', name: 'Alice Wonder', email: 'alice@email.com', enrollmentYear: 2024),
-    Student(id: 'S002', name: 'Bob Builder', email: 'bob@email.com', enrollmentYear: 2024),
-    Student(id: 'S003', name: 'Charlie Brown', enrollmentYear: 2023),
+class _GradeScreenState extends State<GradeScreen> {
+  // ==================== SAMPLE DATA ====================
+  final List<Student> students = const [
+    Student('S001', 'Alice Wonder'),
+    Student('S002', 'Bob Builder'),
+    Student('S003', 'Charlie Brown'),
   ];
   
-  final List<Assignment> assignments = [
-    Assignment(id: 'A001', name: 'Homework 1', maxScore: 100, weight: 0.10),
-    Assignment(id: 'A002', name: 'Homework 2', maxScore: 100, weight: 0.10),
-    Assignment(id: 'A003', name: 'Midterm Exam', maxScore: 100, weight: 0.30),
-    Assignment(id: 'A004', name: 'Final Project', maxScore: 100, weight: 0.40),
-    Assignment(id: 'A005', name: 'Participation', maxScore: 100, weight: 0.10),
+  final List<Assignment> assignments = const [
+    Assignment('Homework 1', 100, 0.10),
+    Assignment('Homework 2', 100, 0.10),
+    Assignment('Midterm Exam', 100, 0.30),
+    Assignment('Final Project', 100, 0.40),
+    Assignment('Participation', 100, 0.10),
   ];
   
-  List<Grade> grades = [
-    Grade(studentId: 'S001', assignmentId: 'A001', score: 95.0),
-    Grade(studentId: 'S001', assignmentId: 'A002', score: 88.0),
-    Grade(studentId: 'S001', assignmentId: 'A003', score: 92.0),
-    Grade(studentId: 'S001', assignmentId: 'A004', score: 95.0),
-    Grade(studentId: 'S001', assignmentId: 'A005', score: 100.0),
-    Grade(studentId: 'S002', assignmentId: 'A001', score: 85.0),
-    Grade(studentId: 'S002', assignmentId: 'A003', score: 78.0),
-    Grade(studentId: 'S002', assignmentId: 'A004', score: 82.0),
-    // Bob missing Homework 2 and Participation
-  ];
-  
-  // UI State
+  late List<Grade> grades;
   String? selectedStudentId;
-  String? selectedAssignmentId;
-  double? enteredScore;
-  String? errorMessage;
-  String? successMessage;
-  double? finalPercentage;
-  
-  Color getGradeColor(double percentage) {
-  if (percentage >= 90) return Color(0xFF2E7D32);  // Dark Green
-  if (percentage >= 80) return Color(0xFF558B2F);  // Light Green
-  if (percentage >= 70) return Color(0xFFF57C00);  // Orange
-  if (percentage >= 60) return Color(0xFFE65100);  // Deep Orange
-  return Color(0xFFC62828);  // Red
-}
-
-
-  // Controllers
-  final TextEditingController scoreController = TextEditingController();
+  double? finalGrade;
   
   @override
   void initState() {
     super.initState();
-    // Set default selections
-    if (students.isNotEmpty) selectedStudentId = students[0].id;
-    if (assignments.isNotEmpty) selectedAssignmentId = assignments[0].id;
+    // Initialize sample grades
+    grades = [
+      // Alice's grades
+      const Grade('S001', 'Homework 1', 95),
+      const Grade('S001', 'Homework 2', 88),
+      const Grade('S001', 'Midterm Exam', 92),
+      const Grade('S001', 'Final Project', 95),
+      const Grade('S001', 'Participation', 100),
+      // Bob's grades
+      const Grade('S002', 'Homework 1', 85),
+      const Grade('S002', 'Midterm Exam', 78),
+      const Grade('S002', 'Final Project', 82),
+      // Charlie's grades
+      const Grade('S003', 'Homework 1', 100),
+      const Grade('S003', 'Homework 2', 95),
+      const Grade('S003', 'Midterm Exam', 88),
+      const Grade('S003', 'Final Project', 90),
+      const Grade('S003', 'Participation', 85),
+    ];
+    selectedStudentId = students.first.id;
+    _calculateGrade();
   }
   
-  @override
-  void dispose() {
-    scoreController.dispose();
-    super.dispose();
+  void _calculateGrade() {
+    setState(() {
+      finalGrade = calculateGrade(selectedStudentId!, assignments, grades);
+    });
   }
   
-  void loadExistingScore() {
-    if (selectedStudentId != null && selectedAssignmentId != null) {
-      final existingScore = getExistingScore(
-        studentId: selectedStudentId!,
-        assignmentId: selectedAssignmentId!,
-        grades: grades,
+  void _saveGrade(String assignmentName, double score) {
+    setState(() {
+      final index = grades.indexWhere(
+        (g) => g.studentId == selectedStudentId && g.assignment == assignmentName,
       );
       
-      setState(() {
-        enteredScore = existingScore;
-        scoreController.text = existingScore?.toString() ?? '';
-      });
-    }
-  }
-  
-  void saveGrade() {
-    // Validation
-    if (selectedStudentId == null) {
-      setState(() {
-        errorMessage = 'Please select a student';
-        successMessage = null;
-      });
-      return;
-    }
-    
-    if (selectedAssignmentId == null) {
-      setState(() {
-        errorMessage = 'Please select an assignment';
-        successMessage = null;
-      });
-      return;
-    }
-    
-    if (enteredScore == null) {
-      setState(() {
-        errorMessage = 'Please enter a score';
-        successMessage = null;
-      });
-      return;
-    }
-    
-    // Get assignment max score
-    final assignment = assignments.firstWhere(
-      (a) => a.id == selectedAssignmentId,
-    );
-    
-    if (enteredScore! < 0 || enteredScore! > assignment.maxScore) {
-      setState(() {
-        errorMessage = 'Score must be between 0 and ${assignment.maxScore}';
-        successMessage = null;
-      });
-      return;
-    }
-    
-    // Save or update grade
-    saveOrUpdateGrade(
-      studentId: selectedStudentId!,
-      assignmentId: selectedAssignmentId!,
-      score: enteredScore!,
-      grades: grades,
-    );
-    
-    // Recalculate final grade
-    finalPercentage = calculateFinalGrade(
-      studentId: selectedStudentId!,
-      assignments: assignments,
-      grades: grades,
-    );
-    
-    // Show success message
-    final student = students.firstWhere((s) => s.id == selectedStudentId);
-    final assignmentName = assignments.firstWhere((a) => a.id == selectedAssignmentId).name;
-    
-    setState(() {
-      errorMessage = null;
-      successMessage = '✅ Saved ${enteredScore}/${assignment.maxScore} for ${student.name} - $assignmentName';
-    });
-    
-    // Clear success message after 3 seconds
-    Future.delayed(Duration(seconds: 3), () {
-      if (mounted) {
-        setState(() {
-          successMessage = null;
-        });
+      if (index >= 0) {
+        // Update existing grade
+        grades[index] = Grade(selectedStudentId!, assignmentName, score);
+      } else {
+        // Add new grade
+        grades.add(Grade(selectedStudentId!, assignmentName, score));
       }
+      
+      _calculateGrade();
     });
   }
   
-  void deleteGrade() {
-    if (selectedStudentId == null || selectedAssignmentId == null) {
-      setState(() {
-        errorMessage = 'Please select student and assignment';
-      });
-      return;
-    }
-    
-    final index = grades.indexWhere(
-      (g) => g.studentId == selectedStudentId && g.assignmentId == selectedAssignmentId,
-    );
-    
-    if (index >= 0) {
-      // Show confirmation dialog
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text('Delete Grade'),
-          content: Text('Are you sure you want to delete this grade?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  grades.removeAt(index);
-                  enteredScore = null;
-                  scoreController.clear();
-                  
-                  // Recalculate
-                  finalPercentage = calculateFinalGrade(
-                    studentId: selectedStudentId!,
-                    assignments: assignments,
-                    grades: grades,
-                  );
-                  
-                  errorMessage = null;
-                  successMessage = '🗑️ Grade deleted successfully';
-                });
-                Navigator.pop(context);
-                
-                // Clear success message after 3 seconds
-                Future.delayed(Duration(seconds: 3), () {
-                  if (mounted) {
-                    setState(() {
-                      successMessage = null;
-                    });
-                  }
-                });
-              },
-              child: Text('Delete', style: TextStyle(color: Colors.red)),
-            ),
-          ],
-        ),
-      );
-    } else {
-      setState(() {
-        errorMessage = 'No grade exists to delete';
-      });
-    }
-  }
-  
-  void resetForm() {
+  void _deleteGrade(String assignmentName) {
     setState(() {
-      enteredScore = null;
-      scoreController.clear();
-      errorMessage = null;
-      successMessage = null;
+      grades.removeWhere(
+        (g) => g.studentId == selectedStudentId && g.assignment == assignmentName,
+      );
+      _calculateGrade();
     });
+  }
+  
+  double? _getExistingScore(String assignmentName) {
+    try {
+      return grades.firstWhere(
+        (g) => g.studentId == selectedStudentId && g.assignment == assignmentName,
+      ).score;
+    } catch (e) {
+      return null;
+    }
   }
   
   @override
@@ -262,394 +184,238 @@ class _GradeManagementScreenState extends State<GradeManagementScreen> {
       orElse: () => students.first,
     );
     
-    final selectedAssignment = assignments.firstWhere(
-      (a) => a.id == selectedAssignmentId,
-      orElse: () => assignments.first,
-    );
-    
     return Scaffold(
       appBar: AppBar(
-        title: Text('📝 Grade Manager'),
+        title: const Text('📊 Grade Calculator'),
+        centerTitle: true,
         elevation: 2,
-        actions: [
-          IconButton(
-            icon: Icon(Icons.refresh),
-            onPressed: resetForm,
-            tooltip: 'Reset form',
-          ),
-        ],
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Colors.white,
       ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(16),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Title
-            Text(
-              'Enter Student Grades',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Select student and assignment, then enter score',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade600,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            SizedBox(height: 24),
-            
-            // Student Dropdown
+            // Student Selector
             Container(
               decoration: BoxDecoration(
                 border: Border.all(color: Colors.grey.shade300),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: DropdownButton<String>(
-                hint: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12),
-                  child: Text('Select Student'),
-                ),
                 value: selectedStudentId,
                 isExpanded: true,
-                underline: SizedBox(),
+                underline: const SizedBox(),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 items: students.map((student) {
                   return DropdownMenuItem(
                     value: student.id,
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 12),
-                      child: Text('${student.name} (${student.id})'),
+                    child: Text(
+                      student.name,
+                      style: const TextStyle(fontSize: 16),
                     ),
                   );
                 }).toList(),
                 onChanged: (value) {
                   setState(() {
                     selectedStudentId = value;
-                    loadExistingScore();
+                    _calculateGrade();
                   });
                 },
               ),
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 20),
             
-            // Assignment Dropdown
-            Container(
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: DropdownButton<String>(
-                hint: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12),
-                  child: Text('Select Assignment'),
-                ),
-                value: selectedAssignmentId,
-                isExpanded: true,
-                underline: SizedBox(),
-                items: assignments.map((assignment) {
-                  return DropdownMenuItem(
-                    value: assignment.id,
+            // Assignments List with Grade Input
+            Expanded(
+              child: ListView.builder(
+                itemCount: assignments.length,
+                itemBuilder: (context, index) {
+                  final assignment = assignments[index];
+                  final existingScore = _getExistingScore(assignment.name);
+                  
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
                         children: [
-                          Text(assignment.name),
-                          Text(
-                            'Weight: ${(assignment.weight * 100).toInt()}% | Max: ${assignment.maxScore}',
-                            style: TextStyle(fontSize: 12, color: Colors.grey),
+                          Expanded(
+                            flex: 2,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  assignment.name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Weight: ${(assignment.weight * 100).toInt()}% • Max: ${assignment.max.toInt()}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            flex: 1,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                SizedBox(
+                                  width: 100,
+                                  child: TextField(
+                                    keyboardType: TextInputType.number,
+                                    decoration: InputDecoration(
+                                      hintText: existingScore?.toString() ?? '0',
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 8,
+                                      ),
+                                      suffixText: '/${assignment.max.toInt()}',
+                                      suffixStyle: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                    onSubmitted: (value) {
+                                      final score = double.tryParse(value);
+                                      if (score != null && score >= 0 && score <= assignment.max) {
+                                        _saveGrade(assignment.name, score);
+                                      } else if (value.isEmpty) {
+                                        _deleteGrade(assignment.name);
+                                      }
+                                    },
+                                  ),
+                                ),
+                                if (existingScore != null)
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline, size: 20),
+                                    onPressed: () => _deleteGrade(assignment.name),
+                                    tooltip: 'Delete grade',
+                                  ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
                     ),
                   );
-                }).toList(),
-                onChanged: (value) {
-                  setState(() {
-                    selectedAssignmentId = value;
-                    loadExistingScore();
-                  });
                 },
               ),
             ),
-            SizedBox(height: 24),
             
-            // Score Input
-            TextField(
-              controller: scoreController,
-              decoration: InputDecoration(
-                labelText: 'Enter Score (0 - ${selectedAssignment.maxScore})',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                prefixIcon: Icon(Icons.grade),
-                helperText: enteredScore != null 
-                    ? 'Current score: $enteredScore' 
-                    : 'No grade entered yet',
-              ),
-              keyboardType: TextInputType.number,
-              onChanged: (value) {
-                setState(() {
-                  enteredScore = double.tryParse(value);
-                  if (enteredScore != null) {
-                    errorMessage = null;
-                  }
-                });
-              },
-            ),
-            SizedBox(height: 16),
-            
-            // Action Buttons Row
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: saveGrade,
-                    icon: Icon(Icons.save),
-                    label: Text('Save Grade'),
-                    style: ElevatedButton.styleFrom(
-                      padding: EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      backgroundColor: Colors.green.shade700,
-                    ),
-                  ),
-                ),
-                SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: deleteGrade,
-                    icon: Icon(Icons.delete),
-                    label: Text('Delete Grade'),
-                    style: OutlinedButton.styleFrom(
-                      padding: EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      foregroundColor: Colors.red,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 16),
-            
-            // Messages
-            if (errorMessage != null)
+            // Result Display
+            if (finalGrade != null) ...[
+              const Divider(height: 32),
               Container(
-                padding: EdgeInsets.all(12),
+                padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade200),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.error, color: Colors.red, size: 20),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        errorMessage!,
-                        style: TextStyle(color: Colors.red.shade800),
-                      ),
+                  gradient: LinearGradient(
+                    colors: [
+                      finalGrade!.color,
+                      finalGrade!.color.withOpacity(0.7),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: finalGrade!.color.withOpacity(0.3),
+                      blurRadius: 10,
+                      offset: const Offset(0, 5),
                     ),
                   ],
                 ),
-              ),
-            
-            if (successMessage != null)
-              Container(
-                padding: EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.green.shade200),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.check_circle, color: Colors.green, size: 20),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        successMessage!,
-                        style: TextStyle(color: Colors.green.shade800),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            
-            SizedBox(height: 24),
-            
-            // Divider
-            Divider(height: 32),
-            
-            // Results Card
-            Text(
-              '📊 RESULTS',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(height: 12),
-            
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Padding(
-                padding: EdgeInsets.all(20),
                 child: Column(
                   children: [
-                    // Student Info
-                    Row(
-                      children: [
-                        CircleAvatar(
-                          backgroundColor: Colors.blue.shade100,
-                          child: Icon(Icons.person, color: Colors.blue),
-                        ),
-                        SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                selectedStudent.name,
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              Text(
-                                'ID: ${selectedStudent.id}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                    Text(
+                      '${finalGrade!.f}%',
+                      style: const TextStyle(
+                        fontSize: 48,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
                     ),
-                    SizedBox(height: 20),
-                    
-                    // Grade Display
-                    if (finalPercentage != null) ...[
-                      Text(
-                        'Final Grade',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey.shade600,
-                        ),
+                    const SizedBox(height: 8),
+                    Text(
+                      finalGrade!.letter,
+                      style: const TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
                       ),
-                      SizedBox(height: 8),
-                      Text(
-                        '${finalPercentage!.toStringAsFixed(1)}%',
-                        style: TextStyle(
-                          fontSize: 48,
-                          fontWeight: FontWeight.bold,
-                          color: getGradeColor(finalPercentage!),
-                        ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _getGradeDescription(finalGrade!),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.white.withOpacity(0.9),
                       ),
-                      SizedBox(height: 8),
-                      Container(
-                        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: getGradeColor(finalPercentage!).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          toLetterGrade(finalPercentage!),
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: getGradeColor(finalPercentage!),
-                          ),
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        getGradeDescription(finalPercentage!),
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: getGradeColor(finalPercentage!),
-                        ),
-                      ),
-                    ] else ...[
-                      Icon(
-                        Icons.info_outline,
-                        size: 48,
-                        color: Colors.grey.shade400,
-                      ),
-                      SizedBox(height: 12),
-                      Text(
-                        'No grades available for this student',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
+                    ),
                   ],
                 ),
               ),
-            ),
-            
-            SizedBox(height: 16),
-            
-            // Progress Summary
-            Card(
-              elevation: 2,
-              child: Padding(
-                padding: EdgeInsets.all(16),
+              const SizedBox(height: 16),
+              
+              // Progress Summary
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '📋 Progress Summary',
+                      '📋 Progress',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 14,
+                        color: Colors.grey.shade700,
                       ),
                     ),
-                    SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     ...assignments.map((assignment) {
-                      final existingGrade = getExistingScore(
-                        studentId: selectedStudent.id,
-                        assignmentId: assignment.id,
-                        grades: grades,
-                      );
-                      
+                      final score = _getExistingScore(assignment.name);
                       return Padding(
-                        padding: EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.only(bottom: 6),
                         child: Row(
                           children: [
                             Icon(
-                              existingGrade != null 
-                                  ? Icons.check_circle 
-                                  : Icons.circle_outlined,
+                              score != null ? Icons.check_circle : Icons.circle_outlined,
                               size: 16,
-                              color: existingGrade != null 
-                                  ? Colors.green 
-                                  : Colors.grey,
+                              color: score != null ? Colors.green : Colors.grey,
                             ),
-                            SizedBox(width: 8),
+                            const SizedBox(width: 8),
                             Expanded(
-                              child: Text(assignment.name),
+                              child: Text(
+                                assignment.name,
+                                style: const TextStyle(fontSize: 12),
+                              ),
                             ),
-                            if (existingGrade != null)
+                            if (score != null)
                               Text(
-                                '${existingGrade}/${assignment.maxScore}',
+                                '${score.toInt()}/${assignment.max.toInt()}',
                                 style: TextStyle(
+                                  fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.green.shade700,
                                 ),
@@ -657,7 +423,10 @@ class _GradeManagementScreenState extends State<GradeManagementScreen> {
                             else
                               Text(
                                 'Not graded',
-                                style: TextStyle(color: Colors.grey),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade500,
+                                ),
                               ),
                           ],
                         ),
@@ -666,10 +435,18 @@ class _GradeManagementScreenState extends State<GradeManagementScreen> {
                   ],
                 ),
               ),
-            ),
+            ],
           ],
         ),
       ),
     );
+  }
+  
+  String _getGradeDescription(double percentage) {
+    if (percentage >= 90) return 'Excellent! 🎉';
+    if (percentage >= 80) return 'Good job! 👍';
+    if (percentage >= 70) return 'Satisfactory 📚';
+    if (percentage >= 60) return 'Needs Improvement ⚠️';
+    return 'Failing - Keep Trying! 💪';
   }
 }
