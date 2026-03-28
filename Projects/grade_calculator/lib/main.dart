@@ -1,68 +1,9 @@
 import 'package:flutter/material.dart';
+import 'models/student.dart';
+import 'models/assignment.dart';
+import 'models/grade.dart';
+import 'engine/calculator.dart';
 
-// ==================== CLASS 01: DATA CLASSES (Minimal) ====================
-class Student {
-  final String id, name;
-  const Student(this.id, this.name);
-  @override
-  String toString() => name;
-}
-
-class Assignment {
-  final String name;
-  final double max, weight;
-  const Assignment(this.name, this.max, this.weight);
-}
-
-class Grade {
-  final String studentId, assignment;
-  final double? score;
-  const Grade(this.studentId, this.assignment, this.score);
-}
-
-// ==================== CLASS 01: EXTENSION METHODS ====================
-extension DoubleExt on double {
-  String get f => toStringAsFixed(1);
-  String get letter => switch (this) {
-    >= 90 => 'A',
-    >= 80 => 'B',
-    >= 70 => 'C',
-    >= 60 => 'D',
-    _ => 'F'
-  };
-  
-  Color get color => switch (this) {
-    >= 90 => Colors.green,
-    >= 80 => Colors.lightGreen,
-    >= 70 => Colors.orange,
-    >= 60 => Colors.deepOrange,
-    _ => Colors.red,
-  };
-}
-
-// ==================== CLASS 03: GENERIC FUNCTIONS ====================
-double? calculateGrade(String studentId, List<Assignment> assignments, List<Grade> grades) {
-  final studentGrades = grades.where((g) => g.studentId == studentId).toList();
-  if (studentGrades.isEmpty) return null;
-  
-  double totalWeightedScore = 0.0;
-  double totalWeight = 0.0;
-  
-  for (var assignment in assignments) {
-    final grade = studentGrades.firstWhere(
-      (g) => g.assignment == assignment.name,
-      orElse: () => Grade(studentId, assignment.name, null),
-    );
-    
-    final score = grade.score ?? 0.0;
-    totalWeightedScore += score * assignment.weight;
-    totalWeight += assignment.weight;
-  }
-  
-  return totalWeight > 0 ? (totalWeightedScore / totalWeight) : null;
-}
-
-// ==================== MAIN APP ====================
 void main() => runApp(const GradeApp());
 
 class GradeApp extends StatelessWidget {
@@ -90,23 +31,24 @@ class GradeScreen extends StatefulWidget {
 
 class _GradeScreenState extends State<GradeScreen> {
   // ==================== SAMPLE DATA ====================
-  final List<Student> students = const [
-    Student('S001', 'Alice Wonder'),
-    Student('S002', 'Bob Builder'),
-    Student('S003', 'Charlie Brown'),
+  final List<Student> students = [
+    Student(id: 'S001', name: 'Alice Wonder', enrollmentYear: 2024),
+    Student(id: 'S002', name: 'Bob Builder', enrollmentYear: 2024),
+    Student(id: 'S003', name: 'Charlie Brown', enrollmentYear: 2024),
   ];
   
-  final List<Assignment> assignments = const [
-    Assignment('Homework 1', 100, 0.10),
-    Assignment('Homework 2', 100, 0.10),
-    Assignment('Midterm Exam', 100, 0.30),
-    Assignment('Final Project', 100, 0.40),
-    Assignment('Participation', 100, 0.10),
+  final List<Assignment> assignments = [
+    Assignment(id: 'A001', name: 'Homework 1', maxScore: 100, weight: 0.10),
+    Assignment(id: 'A002', name: 'Homework 2', maxScore: 100, weight: 0.10),
+    Assignment(id: 'A003', name: 'Midterm Exam', maxScore: 100, weight: 0.30),
+    Assignment(id: 'A004', name: 'Final Project', maxScore: 100, weight: 0.40),
+    Assignment(id: 'A005', name: 'Participation', maxScore: 100, weight: 0.10),
   ];
   
   late List<Grade> grades;
   String? selectedStudentId;
   double? finalGrade;
+  late GradeCalculator _calculator;
   
   @override
   void initState() {
@@ -114,63 +56,80 @@ class _GradeScreenState extends State<GradeScreen> {
     // Initialize sample grades
     grades = [
       // Alice's grades
-      const Grade('S001', 'Homework 1', 95),
-      const Grade('S001', 'Homework 2', 88),
-      const Grade('S001', 'Midterm Exam', 92),
-      const Grade('S001', 'Final Project', 95),
-      const Grade('S001', 'Participation', 100),
+      Grade(studentId: 'S001', assignmentId: 'A001', score: 95),
+      Grade(studentId: 'S001', assignmentId: 'A002', score: 88),
+      Grade(studentId: 'S001', assignmentId: 'A003', score: 92),
+      Grade(studentId: 'S001', assignmentId: 'A004', score: 95),
+      Grade(studentId: 'S001', assignmentId: 'A005', score: 100),
       // Bob's grades
-      const Grade('S002', 'Homework 1', 85),
-      const Grade('S002', 'Midterm Exam', 78),
-      const Grade('S002', 'Final Project', 82),
+      Grade(studentId: 'S002', assignmentId: 'A001', score: 85),
+      Grade(studentId: 'S002', assignmentId: 'A003', score: 78),
+      Grade(studentId: 'S002', assignmentId: 'A004', score: 82),
       // Charlie's grades
-      const Grade('S003', 'Homework 1', 100),
-      const Grade('S003', 'Homework 2', 95),
-      const Grade('S003', 'Midterm Exam', 88),
-      const Grade('S003', 'Final Project', 90),
-      const Grade('S003', 'Participation', 85),
+      Grade(studentId: 'S003', assignmentId: 'A001', score: 100),
+      Grade(studentId: 'S003', assignmentId: 'A002', score: 95),
+      Grade(studentId: 'S003', assignmentId: 'A003', score: 88),
+      Grade(studentId: 'S003', assignmentId: 'A004', score: 90),
+      Grade(studentId: 'S003', assignmentId: 'A005', score: 85),
     ];
     selectedStudentId = students.first.id;
-    _calculateGrade();
+    _updateCalculator();
   }
   
+  void _updateCalculator() {
+    _calculator = GradeCalculator(
+      students: students,
+      assignments: assignments,
+      grades: grades,
+    );
+    _calculateGrade();
+  }
+
   void _calculateGrade() {
     setState(() {
-      finalGrade = calculateGrade(selectedStudentId!, assignments, grades);
+      finalGrade = _calculator.calculateStudentGrade(selectedStudentId!);
     });
   }
   
-  void _saveGrade(String assignmentName, double score) {
+  void _saveGrade(String assignmentId, double score) {
     setState(() {
       final index = grades.indexWhere(
-        (g) => g.studentId == selectedStudentId && g.assignment == assignmentName,
+        (g) => g.studentId == selectedStudentId && g.assignmentId == assignmentId,
       );
       
       if (index >= 0) {
         // Update existing grade
-        grades[index] = Grade(selectedStudentId!, assignmentName, score);
+        grades[index] = Grade(
+          studentId: selectedStudentId!,
+          assignmentId: assignmentId,
+          score: score,
+        );
       } else {
         // Add new grade
-        grades.add(Grade(selectedStudentId!, assignmentName, score));
+        grades.add(Grade(
+          studentId: selectedStudentId!,
+          assignmentId: assignmentId,
+          score: score,
+        ));
       }
       
-      _calculateGrade();
+      _updateCalculator();
     });
   }
   
-  void _deleteGrade(String assignmentName) {
+  void _deleteGrade(String assignmentId) {
     setState(() {
       grades.removeWhere(
-        (g) => g.studentId == selectedStudentId && g.assignment == assignmentName,
+        (g) => g.studentId == selectedStudentId && g.assignmentId == assignmentId,
       );
-      _calculateGrade();
+      _updateCalculator();
     });
   }
   
-  double? _getExistingScore(String assignmentName) {
+  double? _getExistingScore(String assignmentId) {
     try {
       return grades.firstWhere(
-        (g) => g.studentId == selectedStudentId && g.assignment == assignmentName,
+        (g) => g.studentId == selectedStudentId && g.assignmentId == assignmentId,
       ).score;
     } catch (e) {
       return null;
@@ -179,11 +138,6 @@ class _GradeScreenState extends State<GradeScreen> {
   
   @override
   Widget build(BuildContext context) {
-    final selectedStudent = students.firstWhere(
-      (s) => s.id == selectedStudentId,
-      orElse: () => students.first,
-    );
-    
     return Scaffold(
       appBar: AppBar(
         title: const Text('📊 Grade Calculator'),
@@ -233,7 +187,7 @@ class _GradeScreenState extends State<GradeScreen> {
                 itemCount: assignments.length,
                 itemBuilder: (context, index) {
                   final assignment = assignments[index];
-                  final existingScore = _getExistingScore(assignment.name);
+                  final existingScore = _getExistingScore(assignment.id);
                   
                   return Card(
                     margin: const EdgeInsets.only(bottom: 12),
@@ -259,7 +213,7 @@ class _GradeScreenState extends State<GradeScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  'Weight: ${(assignment.weight * 100).toInt()}% • Max: ${assignment.max.toInt()}',
+                                  'Weight: ${(assignment.weight * 100).toInt()}% • Max: ${assignment.maxScore.toInt()}',
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey.shade600,
@@ -286,7 +240,7 @@ class _GradeScreenState extends State<GradeScreen> {
                                         horizontal: 8,
                                         vertical: 8,
                                       ),
-                                      suffixText: '/${assignment.max.toInt()}',
+                                      suffixText: '/${assignment.maxScore.toInt()}',
                                       suffixStyle: TextStyle(
                                         fontSize: 12,
                                         color: Colors.grey.shade600,
@@ -294,10 +248,10 @@ class _GradeScreenState extends State<GradeScreen> {
                                     ),
                                     onSubmitted: (value) {
                                       final score = double.tryParse(value);
-                                      if (score != null && score >= 0 && score <= assignment.max) {
-                                        _saveGrade(assignment.name, score);
+                                      if (score != null && score >= 0 && score <= assignment.maxScore) {
+                                        _saveGrade(assignment.id, score);
                                       } else if (value.isEmpty) {
-                                        _deleteGrade(assignment.name);
+                                        _deleteGrade(assignment.id);
                                       }
                                     },
                                   ),
@@ -305,7 +259,7 @@ class _GradeScreenState extends State<GradeScreen> {
                                 if (existingScore != null)
                                   IconButton(
                                     icon: const Icon(Icons.delete_outline, size: 20),
-                                    onPressed: () => _deleteGrade(assignment.name),
+                                    onPressed: () => _deleteGrade(assignment.id),
                                     tooltip: 'Delete grade',
                                   ),
                               ],
@@ -327,8 +281,8 @@ class _GradeScreenState extends State<GradeScreen> {
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      finalGrade!.color,
-                      finalGrade!.color.withOpacity(0.7),
+                      _getGradeColor(finalGrade!),
+                      _getGradeColor(finalGrade!).withOpacity(0.7),
                     ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
@@ -336,7 +290,7 @@ class _GradeScreenState extends State<GradeScreen> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: finalGrade!.color.withOpacity(0.3),
+                      color: _getGradeColor(finalGrade!).withOpacity(0.3),
                       blurRadius: 10,
                       offset: const Offset(0, 5),
                     ),
@@ -345,7 +299,7 @@ class _GradeScreenState extends State<GradeScreen> {
                 child: Column(
                   children: [
                     Text(
-                      '${finalGrade!.f}%',
+                      '${finalGrade!.toStringAsFixed(1)}%',
                       style: const TextStyle(
                         fontSize: 48,
                         fontWeight: FontWeight.bold,
@@ -354,7 +308,7 @@ class _GradeScreenState extends State<GradeScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      finalGrade!.letter,
+                      finalGrade!.toLetterGrade(),
                       style: const TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.bold,
@@ -363,7 +317,7 @@ class _GradeScreenState extends State<GradeScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _getGradeDescription(finalGrade!),
+                      finalGrade!.toDescription(),
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.white.withOpacity(0.9),
@@ -394,7 +348,7 @@ class _GradeScreenState extends State<GradeScreen> {
                     ),
                     const SizedBox(height: 8),
                     ...assignments.map((assignment) {
-                      final score = _getExistingScore(assignment.name);
+                      final score = _getExistingScore(assignment.id);
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 6),
                         child: Row(
@@ -413,7 +367,7 @@ class _GradeScreenState extends State<GradeScreen> {
                             ),
                             if (score != null)
                               Text(
-                                '${score.toInt()}/${assignment.max.toInt()}',
+                                '${score.toInt()}/${assignment.maxScore.toInt()}',
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
@@ -441,12 +395,12 @@ class _GradeScreenState extends State<GradeScreen> {
       ),
     );
   }
-  
-  String _getGradeDescription(double percentage) {
-    if (percentage >= 90) return 'Excellent! 🎉';
-    if (percentage >= 80) return 'Good job! 👍';
-    if (percentage >= 70) return 'Satisfactory 📚';
-    if (percentage >= 60) return 'Needs Improvement ⚠️';
-    return 'Failing - Keep Trying! 💪';
+
+  Color _getGradeColor(double percentage) {
+    if (percentage >= 90) return Colors.green;
+    if (percentage >= 80) return Colors.lightGreen;
+    if (percentage >= 70) return Colors.orange;
+    if (percentage >= 60) return Colors.deepOrange;
+    return Colors.red;
   }
 }

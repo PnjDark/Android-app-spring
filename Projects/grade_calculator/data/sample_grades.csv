@@ -1,0 +1,19 @@
+Type,ID,Name,Email,EnrollmentYear\r
+Student,S001,Alice Wonder,alice@email.com,2024\r
+Student,S002,Bob Builder,bob@email.com,2024\r
+Type,ID,Name,MaxScore,Weight,DueDate\r
+Assignment,A001,Homework 1,100,0.10,2026-02-01\r
+Assignment,A002,Homework 2,100,0.10,2026-02-08\r
+Assignment,A003,Midterm Exam,100,0.30,2026-02-22\r
+Assignment,A004,Final Project,100,0.40,2026-03-15\r
+Assignment,A005,Participation,100,0.10,\r
+Type,StudentID,AssignmentID,Score,SubmissionDate,Comments\r
+Grade,S001,A001,95,2026-02-01,Great work!\r
+Grade,S001,A002,88,2026-02-08,\r
+Grade,S001,A003,92,2026-02-22,Excellent\r
+Grade,S001,A004,95,2026-03-15,Outstanding\r
+Grade,S001,A005,100,,Perfect attendance\r
+Grade,S002,A001,85,2026-02-01,\r
+Grade,S002,A002, ,,Not submitted\r
+Grade,S002,A003,78,2026-02-22,Good effort\r
+Grade,S002,A004,82,2026-03-15,Solid work\r
