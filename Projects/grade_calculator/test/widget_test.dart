@@ -7,6 +7,6 @@ void main() {
     await tester.pumpWidget(const GradeApp());
 
     // Verify that our app starts.
-    expect(find.text('📊 Grade Calculator'), findsOneWidget);
+    expect(find.text('📝 Desktop Grade Manager'), findsOneWidget);
   });
 }
