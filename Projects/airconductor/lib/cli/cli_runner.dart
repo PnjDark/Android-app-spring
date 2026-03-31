@@ -235,7 +235,7 @@ class CliRunner {
   Future<void> _cleanup() async {
     _statusTimer?.cancel();
     await gestureController.stop();
-    await musicController.dispose();
+    musicController.dispose();
     stdout.writeln('\n👋 AirConductor stopped. Goodbye!');
   }
 }
