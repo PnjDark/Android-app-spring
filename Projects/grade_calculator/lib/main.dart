@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'dart:io';
 import 'models/student.dart';
 import 'models/assignment.dart';
 import 'models/grade.dart';
 import 'engine/calculator.dart';
+import 'io/file_parser.dart';
+import 'io/file_writer.dart';
 
 void main() => runApp(const GradeApp());
 
@@ -13,9 +17,10 @@ class GradeApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Grade Calculator',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
       ),
       home: const GradeScreen(),
     );
@@ -30,14 +35,13 @@ class GradeScreen extends StatefulWidget {
 }
 
 class _GradeScreenState extends State<GradeScreen> {
-  // ==================== SAMPLE DATA ====================
-  final List<Student> students = [
+  List<Student> students = [
     Student(id: 'S001', name: 'Alice Wonder', enrollmentYear: 2024),
     Student(id: 'S002', name: 'Bob Builder', enrollmentYear: 2024),
     Student(id: 'S003', name: 'Charlie Brown', enrollmentYear: 2024),
   ];
   
-  final List<Assignment> assignments = [
+  List<Assignment> assignments = [
     Assignment(id: 'A001', name: 'Homework 1', maxScore: 100, weight: 0.10),
     Assignment(id: 'A002', name: 'Homework 2', maxScore: 100, weight: 0.10),
     Assignment(id: 'A003', name: 'Midterm Exam', maxScore: 100, weight: 0.30),
@@ -45,35 +49,29 @@ class _GradeScreenState extends State<GradeScreen> {
     Assignment(id: 'A005', name: 'Participation', maxScore: 100, weight: 0.10),
   ];
   
-  late List<Grade> grades;
+  List<Grade> grades = [];
   String? selectedStudentId;
-  double? finalGrade;
   late GradeCalculator _calculator;
-  
+
   @override
   void initState() {
     super.initState();
-    // Initialize sample grades
+    _loadSampleGrades();
+    if (students.isNotEmpty) selectedStudentId = students.first.id;
+    _updateCalculator();
+  }
+
+  void _loadSampleGrades() {
     grades = [
-      // Alice's grades
       Grade(studentId: 'S001', assignmentId: 'A001', score: 95),
       Grade(studentId: 'S001', assignmentId: 'A002', score: 88),
       Grade(studentId: 'S001', assignmentId: 'A003', score: 92),
       Grade(studentId: 'S001', assignmentId: 'A004', score: 95),
       Grade(studentId: 'S001', assignmentId: 'A005', score: 100),
-      // Bob's grades
       Grade(studentId: 'S002', assignmentId: 'A001', score: 85),
       Grade(studentId: 'S002', assignmentId: 'A003', score: 78),
       Grade(studentId: 'S002', assignmentId: 'A004', score: 82),
-      // Charlie's grades
-      Grade(studentId: 'S003', assignmentId: 'A001', score: 100),
-      Grade(studentId: 'S003', assignmentId: 'A002', score: 95),
-      Grade(studentId: 'S003', assignmentId: 'A003', score: 88),
-      Grade(studentId: 'S003', assignmentId: 'A004', score: 90),
-      Grade(studentId: 'S003', assignmentId: 'A005', score: 85),
     ];
-    selectedStudentId = students.first.id;
-    _updateCalculator();
   }
   
   void _updateCalculator() {
@@ -82,15 +80,67 @@ class _GradeScreenState extends State<GradeScreen> {
       assignments: assignments,
       grades: grades,
     );
-    _calculateGrade();
   }
 
-  void _calculateGrade() {
-    setState(() {
-      finalGrade = _calculator.calculateStudentGrade(selectedStudentId!);
-    });
+  Future<void> _importFile() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['csv', 'xlsx', 'xls'],
+    );
+
+    if (result != null) {
+      final path = result.files.single.path!;
+      final ext = path.split('.').last.toLowerCase();
+
+      try {
+        ParsedData parsed;
+        if (ext == 'csv') {
+          parsed = await FileParser.parseCsv(path);
+        } else {
+          parsed = await FileParser.parseExcel(path);
+        }
+
+        setState(() {
+          students = parsed.students;
+          assignments = parsed.assignments;
+          grades = parsed.grades;
+          if (students.isNotEmpty) selectedStudentId = students.first.id;
+          _updateCalculator();
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Imported ${students.length} students')),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to import: $e')),
+        );
+      }
+    }
   }
-  
+
+  Future<void> _exportFile() async {
+    String? outputPath = await FilePicker.platform.saveFile(
+      dialogTitle: 'Save Results',
+      fileName: 'results.csv',
+      type: FileType.custom,
+      allowedExtensions: ['csv'],
+    );
+
+    if (outputPath != null) {
+      try {
+        await FileWriter.toCsv(outputPath, students, assignments, _calculator);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Exported to $outputPath')),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to export: $e')),
+        );
+      }
+    }
+  }
+
   void _saveGrade(String assignmentId, double score) {
     setState(() {
       final index = grades.indexWhere(
@@ -98,296 +148,123 @@ class _GradeScreenState extends State<GradeScreen> {
       );
       
       if (index >= 0) {
-        // Update existing grade
-        grades[index] = Grade(
-          studentId: selectedStudentId!,
-          assignmentId: assignmentId,
-          score: score,
-        );
+        grades[index] = Grade(studentId: selectedStudentId!, assignmentId: assignmentId, score: score);
       } else {
-        // Add new grade
-        grades.add(Grade(
-          studentId: selectedStudentId!,
-          assignmentId: assignmentId,
-          score: score,
-        ));
+        grades.add(Grade(studentId: selectedStudentId!, assignmentId: assignmentId, score: score));
       }
-      
       _updateCalculator();
     });
   }
-  
+
   void _deleteGrade(String assignmentId) {
     setState(() {
-      grades.removeWhere(
-        (g) => g.studentId == selectedStudentId && g.assignmentId == assignmentId,
-      );
+      grades.removeWhere((g) => g.studentId == selectedStudentId && g.assignmentId == assignmentId);
       _updateCalculator();
     });
   }
-  
+
   double? _getExistingScore(String assignmentId) {
     try {
-      return grades.firstWhere(
-        (g) => g.studentId == selectedStudentId && g.assignmentId == assignmentId,
-      ).score;
+      return grades.firstWhere((g) => g.studentId == selectedStudentId && g.assignmentId == assignmentId).score;
     } catch (e) {
       return null;
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
+    final finalGrade = selectedStudentId != null ? _calculator.calculateStudentGrade(selectedStudentId!) : null;
+    final stats = _calculator.getClassStatistics();
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('📊 Grade Calculator'),
-        centerTitle: true,
-        elevation: 2,
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Colors.white,
+        title: const Text('📝 Desktop Grade Manager'),
+        actions: [
+          IconButton(icon: const Icon(Icons.upload_file), onPressed: _importFile, tooltip: 'Import CSV/Excel'),
+          IconButton(icon: const Icon(Icons.download), onPressed: _exportFile, tooltip: 'Export CSV'),
+          const SizedBox(width: 8),
+        ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Student Selector
-            Container(
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: DropdownButton<String>(
-                value: selectedStudentId,
-                isExpanded: true,
-                underline: const SizedBox(),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                items: students.map((student) {
-                  return DropdownMenuItem(
-                    value: student.id,
-                    child: Text(
-                      student.name,
-                      style: const TextStyle(fontSize: 16),
-                    ),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setState(() {
-                    selectedStudentId = value;
-                    _calculateGrade();
-                  });
-                },
-              ),
-            ),
-            const SizedBox(height: 20),
-            
-            // Assignments List with Grade Input
-            Expanded(
-              child: ListView.builder(
-                itemCount: assignments.length,
-                itemBuilder: (context, index) {
-                  final assignment = assignments[index];
-                  final existingScore = _getExistingScore(assignment.id);
-                  
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 2,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  assignment.name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Weight: ${(assignment.weight * 100).toInt()}% • Max: ${assignment.maxScore.toInt()}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Expanded(
-                            flex: 1,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                SizedBox(
-                                  width: 100,
-                                  child: TextField(
-                                    keyboardType: TextInputType.number,
-                                    decoration: InputDecoration(
-                                      hintText: existingScore?.toString() ?? '0',
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      contentPadding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 8,
-                                      ),
-                                      suffixText: '/${assignment.maxScore.toInt()}',
-                                      suffixStyle: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey.shade600,
-                                      ),
-                                    ),
-                                    onSubmitted: (value) {
-                                      final score = double.tryParse(value);
-                                      if (score != null && score >= 0 && score <= assignment.maxScore) {
-                                        _saveGrade(assignment.id, score);
-                                      } else if (value.isEmpty) {
-                                        _deleteGrade(assignment.id);
-                                      }
-                                    },
-                                  ),
-                                ),
-                                if (existingScore != null)
-                                  IconButton(
-                                    icon: const Icon(Icons.delete_outline, size: 20),
-                                    onPressed: () => _deleteGrade(assignment.id),
-                                    tooltip: 'Delete grade',
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            
-            // Result Display
-            if (finalGrade != null) ...[
-              const Divider(height: 32),
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      _getGradeColor(finalGrade!),
-                      _getGradeColor(finalGrade!).withOpacity(0.7),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _getGradeColor(finalGrade!).withOpacity(0.3),
-                      blurRadius: 10,
-                      offset: const Offset(0, 5),
-                    ),
-                  ],
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Sidebar / Student List
+          SizedBox(
+            width: 300,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text('Students (${students.length})', style: Theme.of(context).textTheme.titleLarge),
                 ),
-                child: Column(
-                  children: [
-                    Text(
-                      '${finalGrade!.toStringAsFixed(1)}%',
-                      style: const TextStyle(
-                        fontSize: 48,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      finalGrade!.toLetterGrade(),
-                      style: const TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      finalGrade!.toDescription(),
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.white.withOpacity(0.9),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              
-              // Progress Summary
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '📋 Progress',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: Colors.grey.shade700,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    ...assignments.map((assignment) {
-                      final score = _getExistingScore(assignment.id);
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Row(
-                          children: [
-                            Icon(
-                              score != null ? Icons.check_circle : Icons.circle_outlined,
-                              size: 16,
-                              color: score != null ? Colors.green : Colors.grey,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                assignment.name,
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                            ),
-                            if (score != null)
-                              Text(
-                                '${score.toInt()}/${assignment.maxScore.toInt()}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green.shade700,
-                                ),
-                              )
-                            else
-                              Text(
-                                'Not graded',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey.shade500,
-                                ),
-                              ),
-                          ],
-                        ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: students.length,
+                    itemBuilder: (context, index) {
+                      final student = students[index];
+                      final grade = _calculator.calculateStudentGrade(student.id);
+                      return ListTile(
+                        title: Text(student.name),
+                        subtitle: Text(student.id),
+                        trailing: Text(grade != null ? '${grade.toStringAsFixed(1)}%' : '-'),
+                        selected: selectedStudentId == student.id,
+                        onTap: () => setState(() => selectedStudentId = student.id),
                       );
-                    }).toList(),
-                  ],
+                    },
+                  ),
                 ),
+              ],
+            ),
+          ),
+          const VerticalDivider(width: 1),
+          // Main Content
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (selectedStudentId != null) ...[
+                    _buildStudentHeader(students.firstWhere((s) => s.id == selectedStudentId), finalGrade),
+                    const SizedBox(height: 24),
+                    _buildAssignmentsList(),
+                    const SizedBox(height: 32),
+                    _buildStatsCard(stats),
+                  ] else
+                    const Center(child: Text('Select a student to view grades')),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStudentHeader(Student student, double? finalGrade) {
+    return Card(
+      color: Theme.of(context).colorScheme.primaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Row(
+          children: [
+            const CircleAvatar(radius: 30, child: Icon(Icons.person, size: 30)),
+            const SizedBox(width: 20),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(student.name, style: Theme.of(context).textTheme.headlineSmall),
+                  Text('ID: ${student.id} | Year: ${student.enrollmentYear}'),
+                ],
+              ),
+            ),
+            if (finalGrade != null) ...[
+              Column(
+                children: [
+                  Text('${finalGrade.toStringAsFixed(1)}%', style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
+                  Text(finalGrade.toLetterGrade(), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                ],
               ),
             ],
           ],
@@ -396,11 +273,100 @@ class _GradeScreenState extends State<GradeScreen> {
     );
   }
 
-  Color _getGradeColor(double percentage) {
-    if (percentage >= 90) return Colors.green;
-    if (percentage >= 80) return Colors.lightGreen;
-    if (percentage >= 70) return Colors.orange;
-    if (percentage >= 60) return Colors.deepOrange;
-    return Colors.red;
+  Widget _buildAssignmentsList() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Assignments', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 12),
+        ...assignments.map((assignment) {
+          final score = _getExistingScore(assignment.id);
+          return Card(
+            margin: const EdgeInsets.only(bottom: 8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  Expanded(child: Text(assignment.name, style: const TextStyle(fontWeight: FontWeight.bold))),
+                  Text('Weight: ${(assignment.weight * 100).toInt()}%'),
+                  const SizedBox(width: 24),
+                  SizedBox(
+                    width: 120,
+                    child: TextField(
+                      decoration: InputDecoration(
+                        hintText: score?.toString() ?? '0',
+                        suffixText: '/${assignment.maxScore.toInt()}',
+                        isDense: true,
+                      ),
+                      keyboardType: TextInputType.number,
+                      onSubmitted: (val) {
+                        final s = double.tryParse(val);
+                        if (s != null) _saveGrade(assignment.id, s);
+                      },
+                    ),
+                  ),
+                  if (score != null)
+                    IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _deleteGrade(assignment.id)),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      ],
+    );
+  }
+
+  Widget _buildStatsCard(Map<String, dynamic> stats) {
+    final dist = stats['distribution'] as Map;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('📈 Class Statistics', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 20,
+              runSpacing: 20,
+              alignment: WrapAlignment.spaceAround,
+              children: [
+                _buildStatItem('Average', '${(stats['average'] as double).toStringAsFixed(1)}%'),
+                _buildStatItem('Highest', '${(stats['highest'] as double).toStringAsFixed(1)}%'),
+                _buildStatItem('Lowest', '${(stats['lowest'] as double).toStringAsFixed(1)}%'),
+                _buildStatItem('Students', '${stats['count']}/${students.length}'),
+              ],
+            ),
+            const Divider(height: 32),
+            Text('Grade Distribution', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            ...['A', 'B', 'C', 'D', 'F'].map((l) {
+              final count = dist[l] ?? 0;
+              final percent = stats['count'] > 0 ? count / stats['count'] : 0.0;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    SizedBox(width: 20, child: Text(l)),
+                    Expanded(child: LinearProgressIndicator(value: percent as double)),
+                    const SizedBox(width: 12),
+                    Text('$count'),
+                  ],
+                ),
+              );
+            }).toList(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatItem(String label, String value) {
+    return Column(
+      children: [
+        Text(label, style: const TextStyle(color: Colors.grey)),
+        Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+      ],
+    );
   }
 }
