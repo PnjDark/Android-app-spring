@@ -1,6 +1,4 @@
-# 🌟 **MealSnap+ Documentation**
-
-### *An AI-Powered Multimodal Food Recognition, Nutrition Tracking, and Intelligent Meal Suggestion System*
+# **MealSnap+ Documentation**
 
 ---
 
@@ -11,7 +9,7 @@
 
 ---
 
-## 📑 **Table of Contents**
+## **Table of Contents**
 
 1. Introduction
 2. Problem Statement & Motivation
@@ -55,7 +53,7 @@ Unlike existing solutions, MealSnap+ is specifically tailored to African culinar
 ### 2.1 Core Problems
 
 | Problem | Description | Impact |
-|---------|-------------|--------|
+| --------|-------------|--------|
 | **Manual Input Burden** | Users must search databases, enter quantities, and calculate macros manually | High abandonment rates (80% within 30 days) |
 | **Cultural Blindness** | Existing apps lack African dish databases | Poor accuracy for local users |
 | **No Recipe Inspiration** | Users waste food and time wondering what to cook | Increased food waste, meal monotony |
@@ -111,6 +109,7 @@ The **FAO African Food Composition Tables** provide baseline nutritional data fo
 ### 4.2 Scope
 
 **In Scope:**
+
 - Android and iOS mobile application (Flutter)
 - Camera, gallery, and screenshot import
 - Food and ingredient recognition
@@ -121,6 +120,7 @@ The **FAO African Food Composition Tables** provide baseline nutritional data fo
 - User feedback collection
 
 **Out of Scope:**
+
 - Wearable integration (future work)
 - Social features (future work)
 - E-commerce integration
@@ -184,37 +184,45 @@ The **FAO African Food Composition Tables** provide baseline nutritional data fo
 ### 7.1 Core Features
 
 #### 📸 **Meal Scan**
+
 - AI identifies dishes from photos
 - Estimates calories, macros, and portion size
 - Suggests healthier alternatives
 
 #### 🖼️ **Screenshot & Gallery Import**
+
 - Import any food image from device
 - Process retroactively logged meals
 
 #### 🧾 **Receipt Scan**
+
 - OCR extracts items and prices
 - Categorises purchases (groceries, restaurants)
 - Builds expense history
 
 #### 🥬 **Ingredient Snapshot**
+
 - Detects individual ingredients from fridge/pantry photos
 - Shows ingredient list with quantities
 
 #### 🍳 **Meal Suggestion Engine**
+
 - Generates recipes from detected ingredients
 - Ranks suggestions by ingredient match percentage
 - Provides cooking time estimates
 
 #### 🗣️ **Voice Input**
+
 - "Add rice and beans for lunch"
 - Automatic parsing and logging
 
 #### 📍 **Sensor-Assisted Context**
+
 - Time-based meal suggestions (breakfast, lunch, dinner)
 - Location-based price estimation
 
 #### 📊 **Unified Dashboard**
+
 - Calorie tracking
 - Expense tracking
 - Meal history with images
@@ -1041,6 +1049,7 @@ suggestions/{suggestionId} {
 ## 16. Future Enhancements
 
 ### Short-Term (Post-Defense)
+
 - **Wearable integration** — sync with smartwatches for eating event detection
 - **Barcode scanning** — quick logging of packaged foods
 - **Social features** — share meals, challenge friends, community recipes
@@ -1048,6 +1057,7 @@ suggestions/{suggestionId} {
 - **Restaurant menu scanning** — instantly get nutrition for menu items
 
 ### Medium-Term
+
 - **Meal planning** — weekly meal plans based on nutrition goals
 - **Grocery list generation** — auto-create shopping lists from meal plans
 - **Multi-language support** — French, Pidgin, local Cameroonian languages
@@ -1055,6 +1065,7 @@ suggestions/{suggestionId} {
 - **Advanced analytics** — trends, predictions, AI coaching
 
 ### Long-Term
+
 - **Nutritionist marketplace** — connect users with professional nutritionists
 - **Food delivery integration** — order suggested meals
 - **Health app integration** — Apple Health, Google Fit
@@ -1094,13 +1105,13 @@ This project is not merely an academic exercise—it is a market-ready product w
 
 6. Food and Agriculture Organization of the United Nations. (2020). *African Food Composition Tables*. FAO.
 
-7. Google Developers. (2023). *ML Kit for Firebase*. https://firebase.google.com/docs/ml-kit
+7. Google Developers. (2023). *ML Kit for Firebase*. <https://firebase.google.com/docs/ml-kit>
 
-8. TensorFlow. (2023). *TensorFlow Lite*. https://www.tensorflow.org/lite
+8. TensorFlow. (2023). *TensorFlow Lite*. <https://www.tensorflow.org/lite>
 
-9. Dialogflow. (2023). *Dialogflow Documentation*. https://cloud.google.com/dialogflow
+9. Dialogflow. (2023). *Dialogflow Documentation*. <https://cloud.google.com/dialogflow>
 
-10. Flutter Team. (2023). *Flutter Documentation*. https://flutter.dev/docs
+10. Flutter Team. (2023). *Flutter Documentation*. <https://flutter.dev/docs>
 
 ---
 
@@ -1159,13 +1170,3 @@ mealsnap-plus/
 ├── pubspec.yaml
 └── README.md
 ```
-
----
-
-**Document Prepared By:** [Your Name]  
-**Date:** April 2026  
-**Version:** 4.0 (Final Defense Edition)
-
----
-
-*This documentation represents the complete academic and technical specification for MealSnap+, ready for defense submission.*
