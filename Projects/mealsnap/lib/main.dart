@@ -31,7 +31,7 @@ class MealSnapApp extends StatelessWidget {
 }
 
 final _router = GoRouter(
-  initialLocation: '/login',
+  initialLocation: '/',
   routes: [
     GoRoute(
       path: '/login',

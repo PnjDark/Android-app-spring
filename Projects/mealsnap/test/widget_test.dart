@@ -22,15 +22,18 @@ class MockHttpOverrides extends HttpOverrides {
 
 void main() {
   testWidgets('App smoke test', (WidgetTester tester) async {
-    // Provide a simple UI for the smoke test in this restricted environment
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: Text('Welcome back!'),
-      ),
-    ));
+    // We need to bypass Firebase initialization for the smoke test
+    FirebaseService.setTestMode();
 
-    // Verify that the text is shown.
-    expect(find.text('Welcome back!'), findsOneWidget);
+    await HttpOverrides.runZoned(() async {
+      await tester.pumpWidget(const MealSnapApp());
+
+      // Trigger any async processes
+      await tester.pump();
+
+      // Since Firebase init is skipped, the app should load the Home screen as initial location
+      expect(find.text('Hello, Sarah!'), findsOneWidget);
+    }, createHttpClient: (SecurityContext? context) => _MockHttpClient());
   });
 }
 
