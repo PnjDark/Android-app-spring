@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'services/firebase_service.dart';
 import 'core/app_theme.dart';
 import 'screens/home_screen.dart';
 import 'screens/profile_screen.dart';
@@ -10,7 +11,8 @@ import 'screens/camera_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 
-void main() {
+void main() async {
+  await FirebaseService.initialize();
   runApp(const MealSnapApp());
 }
 

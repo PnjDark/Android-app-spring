@@ -1,10 +1,42 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../services/auth_service.dart';
 import '../core/app_theme.dart';
 
-class SignupScreen extends StatelessWidget {
+class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
+
+  @override
+  State<SignupScreen> createState() => _SignupScreenState();
+}
+
+class _SignupScreenState extends State<SignupScreen> {
+  final AuthService _auth = AuthService();
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  bool _isLoading = false;
+
+  Future<void> _signup() async {
+    setState(() => _isLoading = true);
+    try {
+      await _auth.registerWithEmail(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
+        _nameController.text.trim(),
+      );
+      if (mounted) context.go('/');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Registration failed: ${e.toString()}')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -102,17 +134,19 @@ class SignupScreen extends StatelessWidget {
                         children: [
                           _buildInputLabel('Full Name'),
                           const SizedBox(height: 8),
-                          _buildTextField(hint: 'Chef Kofi', icon: Symbols.person),
+                          _buildTextField(hint: 'Chef Kofi', icon: Symbols.person, controller: _nameController),
                           const SizedBox(height: 20),
                           _buildInputLabel('Email Address'),
                           const SizedBox(height: 8),
-                          _buildTextField(hint: 'kofi@example.com', icon: Symbols.mail),
+                          _buildTextField(hint: 'kofi@example.com', icon: Symbols.mail, controller: _emailController),
                           const SizedBox(height: 20),
                           _buildInputLabel('Password'),
                           const SizedBox(height: 8),
-                          _buildTextField(hint: '••••••••', icon: Symbols.lock, isPassword: true),
+                          _buildTextField(hint: '••••••••', icon: Symbols.lock, isPassword: true, controller: _passwordController),
                           const SizedBox(height: 32),
-                          _buildPrimaryButton(context, 'Sign Up', Symbols.arrow_forward),
+                          _isLoading
+                              ? const Center(child: CircularProgressIndicator())
+                              : _buildPrimaryButton(context, 'Sign Up', Symbols.arrow_forward, _signup),
                           const SizedBox(height: 24),
                           Row(
                             children: [
@@ -179,13 +213,19 @@ class SignupScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildTextField({required String hint, required IconData icon, bool isPassword = false}) {
+  Widget _buildTextField({
+    required String hint,
+    required IconData icon,
+    bool isPassword = false,
+    TextEditingController? controller,
+  }) {
     return Container(
       decoration: BoxDecoration(
         color: AppTheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(16),
       ),
       child: TextField(
+        controller: controller,
         obscureText: isPassword,
         decoration: InputDecoration(
           hintText: hint,
@@ -199,7 +239,7 @@ class SignupScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildPrimaryButton(BuildContext context, String label, IconData icon) {
+  Widget _buildPrimaryButton(BuildContext context, String label, IconData icon, VoidCallback onPressed) {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -218,7 +258,7 @@ class SignupScreen extends StatelessWidget {
         ],
       ),
       child: ElevatedButton.icon(
-        onPressed: () => context.go('/'),
+        onPressed: onPressed,
         icon: Text(
           label,
           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),

@@ -1,10 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../services/auth_service.dart';
 import '../core/app_theme.dart';
 
-class LoginScreen extends StatelessWidget {
+class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final AuthService _auth = AuthService();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  bool _isLoading = false;
+
+  Future<void> _login() async {
+    setState(() => _isLoading = true);
+    try {
+      await _auth.signInWithEmail(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
+      );
+      if (mounted) context.go('/');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Login failed: ${e.toString()}')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -96,6 +126,7 @@ class LoginScreen extends StatelessWidget {
                           _buildTextField(
                             hint: 'chef@mealsnap.com',
                             icon: Symbols.mail,
+                            controller: _emailController,
                           ),
                           const SizedBox(height: 24),
                           Row(
@@ -117,9 +148,12 @@ class LoginScreen extends StatelessWidget {
                             hint: '••••••••',
                             icon: Symbols.lock,
                             isPassword: true,
+                            controller: _passwordController,
                           ),
                           const SizedBox(height: 32),
-                          _buildPrimaryButton(context, 'Login', Symbols.arrow_forward),
+                          _isLoading
+                              ? const Center(child: CircularProgressIndicator())
+                              : _buildPrimaryButton(context, 'Login', Symbols.arrow_forward, _login),
                           const SizedBox(height: 32),
                           Row(
                             children: [
@@ -183,13 +217,19 @@ class LoginScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildTextField({required String hint, required IconData icon, bool isPassword = false}) {
+  Widget _buildTextField({
+    required String hint,
+    required IconData icon,
+    bool isPassword = false,
+    TextEditingController? controller,
+  }) {
     return Container(
       decoration: BoxDecoration(
         color: AppTheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(12),
       ),
       child: TextField(
+        controller: controller,
         obscureText: isPassword,
         decoration: InputDecoration(
           hintText: hint,
@@ -203,7 +243,7 @@ class LoginScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildPrimaryButton(BuildContext context, String label, IconData icon) {
+  Widget _buildPrimaryButton(BuildContext context, String label, IconData icon, VoidCallback onPressed) {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -222,7 +262,7 @@ class LoginScreen extends StatelessWidget {
         ],
       ),
       child: ElevatedButton.icon(
-        onPressed: () => context.go('/'),
+        onPressed: onPressed,
         icon: Text(
           label,
           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
