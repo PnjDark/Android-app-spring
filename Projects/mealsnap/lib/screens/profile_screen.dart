@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../services/auth_service.dart';
+import 'settings_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -7,6 +10,9 @@ class ProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final user = FirebaseAuth.instance.currentUser;
+    final displayName = user?.displayName ?? 'Chef';
+    final email = user?.email ?? 'chef@mealsnap.com';
 
     return Scaffold(
       appBar: AppBar(
@@ -21,7 +27,11 @@ class ProfileScreen extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () {
-              // TODO: Navigate to settings
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const SettingsScreen(),
+                ),
+              );
             },
           ),
         ],
@@ -58,15 +68,55 @@ class ProfileScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Sarah Mitchell',
+                    displayName,
                     style: Theme.of(context).textTheme.headlineMedium,
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'sarah.m@culinarycurator.com',
+                    email,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: 140,
+                    child: OutlinedButton(
+                      onPressed: () async {
+                        final controller = TextEditingController(text: displayName);
+                        final updated = await showDialog<String>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('Edit profile name'),
+                            content: TextField(
+                              controller: controller,
+                              decoration: const InputDecoration(
+                                labelText: 'Full Name',
+                              ),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.of(context).pop(),
+                                child: const Text('Cancel'),
+                              ),
+                              ElevatedButton(
+                                onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+                                child: const Text('Save'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (updated != null && updated.isNotEmpty) {
+                          await AuthService.updateDisplayName(updated);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Profile updated.')),
+                            );
+                          }
+                        }
+                      },
+                      child: const Text('Edit Profile'),
+                    ),
                   ),
                 ],
               ),
@@ -209,26 +259,28 @@ class ProfileScreen extends StatelessWidget {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      FilterChip(
+                      ChoiceChip(
                         label: const Text('Heavy Protein'),
-                        icon: const Icon(Icons.restaurant),
+                        avatar: const Icon(Icons.restaurant),
+                        selected: false,
                         onSelected: (_) {},
                       ),
-                      FilterChip(
+                      ChoiceChip(
                         label: const Text('Vegetarian'),
-                        icon: const Icon(Icons.leaf),
+                        avatar: const Icon(Icons.eco),
                         selected: false,
                         onSelected: (_) {},
                       ),
-                      FilterChip(
+                      ChoiceChip(
                         label: const Text('High Energy'),
-                        icon: const Icon(Icons.bolt),
+                        avatar: const Icon(Icons.bolt),
                         selected: false,
                         onSelected: (_) {},
                       ),
-                      FilterChip(
+                      ChoiceChip(
                         label: const Text('Add'),
-                        icon: const Icon(Icons.add),
+                        avatar: const Icon(Icons.add),
+                        selected: false,
                         onSelected: (_) {
                           // TODO: Add preferences
                         },
@@ -259,7 +311,13 @@ class ProfileScreen extends StatelessWidget {
                         _SettingsTile(
                           icon: Icons.notifications,
                           title: 'Notifications',
-                          onTap: () {},
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const SettingsScreen(),
+                              ),
+                            );
+                          },
                         ),
                         Divider(
                           height: 1,
@@ -268,7 +326,13 @@ class ProfileScreen extends StatelessWidget {
                         _SettingsTile(
                           icon: Icons.security,
                           title: 'Account Security',
-                          onTap: () {},
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const SettingsScreen(),
+                              ),
+                            );
+                          },
                         ),
                         Divider(
                           height: 1,
@@ -277,7 +341,13 @@ class ProfileScreen extends StatelessWidget {
                         _SettingsTile(
                           icon: Icons.privacy_tip,
                           title: 'Privacy',
-                          onTap: () {},
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const SettingsScreen(),
+                              ),
+                            );
+                          },
                         ),
                       ],
                     ),
@@ -301,10 +371,8 @@ class ProfileScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(24),
                     ),
                   ),
-                  onPressed: () {
-                    // TODO: Implement logout
-                    // FirebaseAuth.instance.signOut();
-                    // context.go('/login');
+                  onPressed: () async {
+                    await AuthService.signOut();
                   },
                   child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,

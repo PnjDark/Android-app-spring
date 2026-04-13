@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../services/auth_service.dart';
+import 'signup_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -22,21 +24,28 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
-    // TODO: Implement Firebase Authentication
-    // Example:
-    // try {
-    //   await FirebaseAuth.instance.signInWithEmailAndPassword(
-    //     email: _emailController.text,
-    //     password: _passwordController.text,
-    //   );
-    //   if (mounted) {
-    //     context.go('/home');
-    //   }
-    // } catch (e) {
-    //   ScaffoldMessenger.of(context).showSnackBar(
-    //     SnackBar(content: Text('Login failed: $e')),
-    //   );
-    // }
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await AuthService.signIn(
+        _emailController.text,
+        _passwordController.text,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Login failed: ${e.toString()}')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override
@@ -220,7 +229,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   TextButton(
                     onPressed: () {
-                      // TODO: Navigate to SignUp
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const SignUpScreen(),
+                        ),
+                      );
                     },
                     child: const Text('Sign up'),
                   ),

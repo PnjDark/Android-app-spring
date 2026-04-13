@@ -1,10 +1,14 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/signup_screen.dart';
 import 'screens/profile_screen.dart';
+import 'screens/scan_screen.dart';
+import 'screens/settings_screen.dart';
 import 'screens/analytics_screen.dart';
 import 'screens/meal_suggestions_screen.dart';
+import 'services/auth_service.dart';
 import 'firebase_config.dart';
 
 // TODO: Uncomment when Firebase is configured
@@ -98,7 +102,31 @@ class MealSnapApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const HomePage(),
+      home: const AuthGate(),
+    );
+  }
+}
+
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: AuthService.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (!snapshot.hasData) {
+          return const LoginScreen();
+        }
+
+        return const HomePage();
+      },
     );
   }
 }
@@ -117,8 +145,8 @@ class _HomePageState extends State<HomePage> {
   final List<Widget> _pages = <Widget>[
     const HomeContent(),
     const AnalyticsScreen(),
+    const ScanScreen(),
     const MealSuggestionsScreen(),
-    const MealSuggestionsScreen(), // Placeholder for Scan
     const ProfileScreen(),
   ];
 
@@ -168,7 +196,7 @@ class _HomePageState extends State<HomePage> {
       floatingActionButton: Container(
         margin: const EdgeInsets.only(top: 32),
         child: FloatingActionButton(
-          onPressed: () {},
+          onPressed: () => _onItemTapped(2),
           backgroundColor: const Color(0xFF0D631B),
           child: const Icon(Icons.camera_alt, color: Colors.white),
         ),
@@ -180,6 +208,18 @@ class _HomePageState extends State<HomePage> {
 
 class HomeContent extends StatelessWidget {
   const HomeContent({super.key});
+
+  String _greetingName() {
+    final user = AuthService.currentUser;
+    if (user == null) return 'Chef';
+    if (user.displayName?.isNotEmpty == true) {
+      return user.displayName!;
+    }
+    if (user.email?.isNotEmpty == true) {
+      return user.email!.split('@').first;
+    }
+    return 'Chef';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -242,9 +282,9 @@ class HomeContent extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 16),
-                const Text(
-                  'Good morning, Sarah! 👋',
-                  style: TextStyle(
+                Text(
+                  'Good morning, ${_greetingName()}! 👋',
+                  style: const TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF111D23),
@@ -362,6 +402,12 @@ class HomeContent extends StatelessWidget {
                         'Snap your food',
                         Icons.camera_alt,
                         const Color(0xFF0D631B),
+                        () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ScanScreen(initialMode: ScanMode.meal),
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -371,6 +417,12 @@ class HomeContent extends StatelessWidget {
                         'What\'s in your fridge?',
                         Icons.kitchen,
                         const Color(0xFF964900),
+                        () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ScanScreen(initialMode: ScanMode.ingredients),
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -384,6 +436,12 @@ class HomeContent extends StatelessWidget {
                         'Track expenses',
                         Icons.receipt,
                         const Color(0xFF005A8C),
+                        () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ScanScreen(initialMode: ScanMode.receipt),
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -393,6 +451,12 @@ class HomeContent extends StatelessWidget {
                         'Tell me what you ate',
                         Icons.mic,
                         const Color(0xFF2E7D32),
+                        () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ScanScreen(initialMode: ScanMode.voice),
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -571,8 +635,11 @@ class HomeContent extends StatelessWidget {
     );
   }
 
-  static Widget _buildActionButton(String title, String subtitle, IconData icon, Color color) {
-    return Container(
+  static Widget _buildActionButton(String title, String subtitle, IconData icon, Color color, VoidCallback? onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,

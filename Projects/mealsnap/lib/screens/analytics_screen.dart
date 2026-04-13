@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({super.key});
@@ -10,6 +12,42 @@ class AnalyticsScreen extends StatefulWidget {
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
   int _selectedTab = 0; // 0 = Nutrition, 1 = Financial
+
+  Future<void> _exportAsPdf() async {
+    final pdf = pw.Document();
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        build: (context) {
+          return pw.Padding(
+            padding: const pw.EdgeInsets.all(24),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text('MealSnap+ Analytics',
+                    style: pw.TextStyle(fontSize: 26, fontWeight: pw.FontWeight.bold)),
+                pw.SizedBox(height: 18),
+                pw.Text('Overview', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+                pw.SizedBox(height: 12),
+                pw.Bullet(text: 'Nutrition summary: 1,247 calories tracked.'),
+                pw.Bullet(text: 'Macros on track: Protein, Carbs, Fat.'),
+                pw.Bullet(text: 'Budget tracking: 64% spent, \$180 remaining.'),
+                pw.SizedBox(height: 18),
+                pw.Text('Recommendations', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+                pw.SizedBox(height: 12),
+                pw.Text('Keep capturing receipts and meal photos to get better insights.'),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+
+    await Printing.layoutPdf(
+      onLayout: (format) => pdf.save(),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../services/auth_service.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -24,22 +25,32 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 
   Future<void> _signUp() async {
-    // TODO: Implement Firebase Authentication
-    // Example:
-    // try {
-    //   final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-    //     email: _emailController.text,
-    //     password: _passwordController.text,
-    //   );
-    //   await userCredential.user?.updateDisplayName(_nameController.text);
-    //   if (mounted) {
-    //     context.go('/home');
-    //   }
-    // } catch (e) {
-    //   ScaffoldMessenger.of(context).showSnackBar(
-    //     SnackBar(content: Text('Sign up failed: $e')),
-    //   );
-    // }
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await AuthService.signUp(
+        _nameController.text,
+        _emailController.text,
+        _passwordController.text,
+      );
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Sign up failed: ${e.toString()}')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override
@@ -225,7 +236,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   ),
                   TextButton(
                     onPressed: () {
-                      // TODO: Navigate to Login
+                      Navigator.of(context).pop();
                     },
                     child: const Text('Sign In'),
                   ),

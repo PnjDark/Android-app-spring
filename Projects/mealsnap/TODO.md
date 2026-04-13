@@ -1,0 +1,1 @@
+- [x] Edit profile_screen.dart: Replace FilterChip with ChoiceChip/icon→avatar, add missing selected, fix Icons.leaf
