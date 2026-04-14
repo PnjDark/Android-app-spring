@@ -2,7 +2,14 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
+// import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:convert';
+import 'dart:io';
+import '../services/gemini_service.dart';
+import '../models.dart';
+import '../firebase_config.dart';
 
 enum ScanMode { meal, ingredients, receipt, voice }
 
@@ -22,14 +29,16 @@ class _ScanScreenState extends State<ScanScreen> {
   ScanMode _mode = ScanMode.meal;
   String _scanResult = 'Ready to scan your meal.';
   bool _isAnalyzing = false;
-  late final stt.SpeechToText _speech;
-  bool _isListening = false;
-  String _voiceTranscript = '';
+  // late final stt.SpeechToText _speech;
+  late final GeminiService _geminiService;
+  // bool _isListening = false;
+  // String _voiceTranscript = '';
 
   @override
   void initState() {
     super.initState();
-    _speech = stt.SpeechToText();
+    // _speech = stt.SpeechToText();
+    _geminiService = GeminiService(GEMINI_API_KEY);
     _mode = widget.initialMode;
     _scanResult = 'Ready to scan ${widget.initialMode.name}';
     _initializeCamera();
@@ -106,44 +115,68 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   Future<void> _processImage(String path) async {
-    final inputImage = InputImage.fromFilePath(path);
-    final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
+    final imageFile = File(path);
 
     try {
-      final result = await recognizer.processImage(inputImage);
-      final extractedText = result.text.trim();
+      final analysis = await _geminiService.analyzeMealImage(imageFile, _mode.name);
 
-      if (_mode == ScanMode.receipt) {
-        setState(() {
-          _scanResult = extractedText.isEmpty
-              ? 'No readable receipt text found. Try a clearer photo.'
-              : 'Receipt detected:\n$extractedText';
-          _isAnalyzing = false;
-        });
-      } else if (_mode == ScanMode.ingredients) {
-        final found = _extractIngredients(extractedText);
-        setState(() {
-          _scanResult = found.isNotEmpty
-              ? 'Ingredients recognized: ${found.join(', ')}'
-              : 'No ingredient labels found. Try a different angle.';
-          _isAnalyzing = false;
-        });
-      } else {
-        final found = _extractIngredients(extractedText);
-        setState(() {
-          _scanResult = found.isNotEmpty
-              ? 'Detected: ${found.join(', ')}'
-              : 'Try a clearer photo of your meal or packaging.';
-          _isAnalyzing = false;
-        });
+      // Parse the JSON response
+      Map<String, dynamic> parsedAnalysis;
+      try {
+        // Remove markdown code blocks if present
+        String cleanAnalysis = analysis.replaceAll('```json', '').replaceAll('```', '').trim();
+        parsedAnalysis = jsonDecode(cleanAnalysis);
+      } catch (e) {
+        parsedAnalysis = {'raw_response': analysis};
       }
-    } catch (e) {
+
+      // Save to Firestore
+      await _saveToFirestore(path, parsedAnalysis);
+
       setState(() {
-        _scanResult = 'Image analysis failed: $e';
+        _scanResult = _formatAnalysisResult(parsedAnalysis);
         _isAnalyzing = false;
       });
-    } finally {
-      recognizer.close();
+    } catch (e) {
+      setState(() {
+        _scanResult = 'AI analysis failed: $e';
+        _isAnalyzing = false;
+      });
+    }
+  }
+
+  Future<void> _saveToFirestore(String imagePath, Map<String, dynamic> analysis) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final mealEntry = MealEntry(
+      id: '', // Firestore will generate
+      userId: user.uid,
+      type: _mode.name,
+      description: _formatAnalysisResult(analysis),
+      analysis: analysis,
+      timestamp: DateTime.now(),
+      // TODO: Upload image to Firebase Storage and get URL
+    );
+
+    await FirebaseFirestore.instance.collection('meals').add(mealEntry.toFirestore());
+  }
+
+  String _formatAnalysisResult(Map<String, dynamic> analysis) {
+    if (analysis.containsKey('calories')) {
+      return 'Calories: ${analysis['calories']}\n'
+             'Protein: ${analysis['protein']}g\n'
+             'Carbs: ${analysis['carbs']}g\n'
+             'Fat: ${analysis['fat']}g\n'
+             'Ingredients: ${analysis['ingredients']?.join(', ') ?? 'N/A'}';
+    } else if (analysis.containsKey('items')) {
+      final items = analysis['items'] as List<dynamic>? ?? [];
+      final total = analysis['total'] ?? 'N/A';
+      return 'Receipt Items:\n${items.map((item) => '- ${item['name']}: \$${item['price']}').join('\n')}\nTotal: \$${total}';
+    } else if (analysis.containsKey('raw_response')) {
+      return analysis['raw_response'];
+    } else {
+      return 'Analysis complete. Data saved.';
     }
   }
 
@@ -167,41 +200,92 @@ class _ScanScreenState extends State<ScanScreen> {
     return known.where((item) => lower.contains(item)).toList();
   }
 
-  Future<void> _toggleVoiceRecording() async {
-    if (!_isListening) {
-      final available = await _speech.initialize(
-        onStatus: (status) {},
-        onError: (errorNotification) {},
-      );
-      if (!available) {
-        setState(() {
-          _scanResult = 'Voice recognition unavailable.';
-        });
-        return;
-      }
-      setState(() {
-        _isListening = true;
-        _voiceTranscript = '';
-        _scanResult = 'Listening for voice input...';
-      });
-      _speech.listen(onResult: _onSpeechResult);
-    } else {
-      _speech.stop();
-      setState(() {
-        _isListening = false;
-        _scanResult = _voiceTranscript.isEmpty
-            ? 'No voice input captured.'
-            : 'Voice input recognized: $_voiceTranscript';
-      });
-    }
-  }
+  // Future<void> _analyzeVoiceInput(String transcript) async {
+  //   setState(() {
+  //     _isAnalyzing = true;
+  //     _scanResult = 'Analyzing voice input...';
+  //   });
 
-  void _onSpeechResult(dynamic result) {
-    setState(() {
-      _voiceTranscript = result.recognizedWords ?? '';
-      _scanResult = 'Voice input: $_voiceTranscript';
-    });
-  }
+  //   try {
+  //     final analysis = await _geminiService.analyzeText(transcript, _mode.name);
+
+  //     Map<String, dynamic> parsedAnalysis;
+  //     try {
+  //       String cleanAnalysis = analysis.replaceAll('```json', '').replaceAll('```', '').trim();
+  //       parsedAnalysis = jsonDecode(cleanAnalysis);
+  //     } catch (e) {
+  //       parsedAnalysis = {'raw_response': analysis};
+  //     }
+
+  //     await _saveVoiceToFirestore(transcript, parsedAnalysis);
+
+  //     setState(() {
+  //       _scanResult = _formatAnalysisResult(parsedAnalysis);
+  //       _isAnalyzing = false;
+  //     });
+  //   } catch (e) {
+  //     setState(() {
+  //       _scanResult = 'Voice analysis failed: $e';
+  //       _isAnalyzing = false;
+  //     });
+  //   }
+  // }
+
+  // Future<void> _saveVoiceToFirestore(String transcript, Map<String, dynamic> analysis) async {
+  //   final user = FirebaseAuth.instance.currentUser;
+  //   if (user == null) return;
+
+  //   final mealEntry = MealEntry(
+  //     id: '',
+  //     userId: user.uid,
+  //     type: '${_mode.name}_voice',
+  //     description: transcript,
+  //     analysis: analysis,
+  //     timestamp: DateTime.now(),
+  //   );
+
+  //   await FirebaseFirestore.instance.collection('meals').add(mealEntry.toFirestore());
+  // }
+
+  // Future<void> _toggleVoiceRecording() async {
+  //   if (!_isListening) {
+  //     final available = await _speech.initialize(
+  //       onStatus: (status) {},
+  //       onError: (errorNotification) {},
+  //     );
+  //     if (!available) {
+  //       setState(() {
+  //         _scanResult = 'Voice recognition unavailable.';
+  //       });
+  //       return;
+  //     }
+  //     setState(() {
+  //       _isListening = true;
+  //       _voiceTranscript = '';
+  //       _scanResult = 'Listening for voice input...';
+  //     });
+  //     _speech.listen(onResult: _onSpeechResult);
+  //   } else {
+  //     _speech.stop();
+  //     setState(() {
+  //       _isListening = false;
+  //     });
+  //     if (_voiceTranscript.isNotEmpty) {
+  //       await _analyzeVoiceInput(_voiceTranscript);
+  //     } else {
+  //       setState(() {
+  //         _scanResult = 'No voice input captured.';
+  //       });
+  //     }
+  //   }
+  // }
+
+  // void _onSpeechResult(dynamic result) {
+  //   setState(() {
+  //     _voiceTranscript = result.recognizedWords ?? '';
+  //     _scanResult = 'Voice input: $_voiceTranscript';
+  //   });
+  // }
 
   void _setMode(ScanMode mode) {
     setState(() {
@@ -403,11 +487,6 @@ class _ScanScreenState extends State<ScanScreen> {
                               ),
                             ),
                           ),
-                        ),
-                        _buildBottomControl(
-                          icon: Icons.mic,
-                          label: 'Voice',
-                          onPressed: _toggleVoiceRecording,
                         ),
                       ],
                     ),

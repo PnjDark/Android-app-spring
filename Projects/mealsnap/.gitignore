@@ -46,3 +46,8 @@ app.*.map.json
 
 # Exclude Android heap profiling dumps
 android/*.hprof
+
+# Firebase Configuration Files
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+lib/firebase_options.dart

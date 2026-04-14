@@ -56,9 +56,12 @@ dependencies:
   # ML Kit for OCR
   google_mlkit_text_recognition: ^0.15.1
   
+  # Gemini AI
+  google_generative_ai: ^0.4.3
+  
   # Local Storage
   shared_preferences: ^2.2.2
-  speech_to_text: ^7.3.0
+  # speech_to_text: ^7.3.0
   pdf: ^3.11.0
   printing: ^5.12.0
 

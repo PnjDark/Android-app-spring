@@ -1,6 +1,14 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 
+/// GEMINI API SETUP:
+/// 1. Go to https://makersuite.google.com/app/apikey
+/// 2. Create an API key
+/// 3. Replace the GEMINI_API_KEY below with your key
+///    (In production, use environment variables or secure storage)
+
+const String GEMINI_API_KEY = 'AIzaSyCIKIzi22_p-tpvzTgBm5-rQew0vRSNg'; // Replace with your actual API key
+
 /// Firebase initialization
 /// 
 /// SETUP INSTRUCTIONS:
