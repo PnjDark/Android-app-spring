@@ -196,9 +196,9 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
 
-  void _onSpeechResult(stt.SpeechRecognitionResult result) {
+  void _onSpeechResult(dynamic result) {
     setState(() {
-      _voiceTranscript = result.recognizedWords;
+      _voiceTranscript = result.recognizedWords ?? '';
       _scanResult = 'Voice input: $_voiceTranscript';
     });
   }
