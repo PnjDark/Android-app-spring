@@ -1,15 +1,17 @@
+import 'dart:io';
+import 'dart:convert';
+
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image_picker/image_picker.dart';
 // import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'dart:convert';
-import 'dart:io';
+
+import '../services/local_recognition_service.dart';
 import '../services/gemini_service.dart';
-import '../models.dart';
 import '../firebase_config.dart';
+import '../models.dart';
 
 enum ScanMode { meal, ingredients, receipt, voice }
 
@@ -29,8 +31,9 @@ class _ScanScreenState extends State<ScanScreen> {
   ScanMode _mode = ScanMode.meal;
   String _scanResult = 'Ready to scan your meal.';
   bool _isAnalyzing = false;
-  // late final stt.SpeechToText _speech;
+  late final LocalRecognitionService _recognitionService;
   late final GeminiService _geminiService;
+  // late final stt.SpeechToText _speech;
   // bool _isListening = false;
   // String _voiceTranscript = '';
 
@@ -38,7 +41,8 @@ class _ScanScreenState extends State<ScanScreen> {
   void initState() {
     super.initState();
     // _speech = stt.SpeechToText();
-    _geminiService = GeminiService(GEMINI_API_KEY);
+    _recognitionService = LocalRecognitionService();
+    _geminiService = GeminiService(geminiApiKey);
     _mode = widget.initialMode;
     _scanResult = 'Ready to scan ${widget.initialMode.name}';
     _initializeCamera();
@@ -47,6 +51,7 @@ class _ScanScreenState extends State<ScanScreen> {
   @override
   void dispose() {
     _controller?.dispose();
+    _recognitionService.dispose();
     super.dispose();
   }
 
@@ -89,6 +94,13 @@ class _ScanScreenState extends State<ScanScreen> {
 
   Future<void> _capturePhoto() async {
     if (_controller == null || !_controller!.value.isInitialized) return;
+    if (_mode == ScanMode.voice) {
+      setState(() {
+        _scanResult = 'Voice mode is not supported for photo capture yet.';
+      });
+      return;
+    }
+
     try {
       setState(() {
         _isAnalyzing = true;
@@ -105,6 +117,13 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   Future<void> _pickFromGallery() async {
+    if (_mode == ScanMode.voice) {
+      setState(() {
+        _scanResult = 'Voice mode is not supported for gallery images.';
+      });
+      return;
+    }
+
     final image = await ImagePicker().pickImage(source: ImageSource.gallery);
     if (image == null) return;
     setState(() {
@@ -118,19 +137,34 @@ class _ScanScreenState extends State<ScanScreen> {
     final imageFile = File(path);
 
     try {
-      final analysis = await _geminiService.analyzeMealImage(imageFile, _mode.name);
+      setState(() {
+        _isAnalyzing = true;
+        _scanResult = 'Analyzing image...';
+      });
 
-      // Parse the JSON response
       Map<String, dynamic> parsedAnalysis;
-      try {
-        // Remove markdown code blocks if present
-        String cleanAnalysis = analysis.replaceAll('```json', '').replaceAll('```', '').trim();
-        parsedAnalysis = jsonDecode(cleanAnalysis);
-      } catch (e) {
-        parsedAnalysis = {'raw_response': analysis};
+
+      if (_mode == ScanMode.receipt) {
+        parsedAnalysis = await _recognitionService.recognizeReceiptImage(imageFile);
+      } else {
+        // First, get basic recognition from ML Kit
+        final basicAnalysis = await _recognitionService.recognizeFoodImage(
+          imageFile,
+          ingredientsMode: _mode == ScanMode.ingredients,
+        );
+
+        // Then enhance with Gemini for better analysis
+        setState(() {
+          _scanResult = 'Enhancing analysis with AI...';
+        });
+
+        final modeString = _mode == ScanMode.ingredients ? 'ingredients' : 'meal';
+        final geminiAnalysis = await _geminiService.analyzeMealImage(imageFile, modeString);
+
+        // Combine results
+        parsedAnalysis = _combineAnalyses(basicAnalysis, geminiAnalysis);
       }
 
-      // Save to Firestore
       await _saveToFirestore(path, parsedAnalysis);
 
       setState(() {
@@ -139,7 +173,7 @@ class _ScanScreenState extends State<ScanScreen> {
       });
     } catch (e) {
       setState(() {
-        _scanResult = 'AI analysis failed: $e';
+        _scanResult = 'Analysis failed: $e';
         _isAnalyzing = false;
       });
     }
@@ -162,42 +196,39 @@ class _ScanScreenState extends State<ScanScreen> {
     await FirebaseFirestore.instance.collection('meals').add(mealEntry.toFirestore());
   }
 
-  String _formatAnalysisResult(Map<String, dynamic> analysis) {
-    if (analysis.containsKey('calories')) {
-      return 'Calories: ${analysis['calories']}\n'
-             'Protein: ${analysis['protein']}g\n'
-             'Carbs: ${analysis['carbs']}g\n'
-             'Fat: ${analysis['fat']}g\n'
-             'Ingredients: ${analysis['ingredients']?.join(', ') ?? 'N/A'}';
-    } else if (analysis.containsKey('items')) {
-      final items = analysis['items'] as List<dynamic>? ?? [];
-      final total = analysis['total'] ?? 'N/A';
-      return 'Receipt Items:\n${items.map((item) => '- ${item['name']}: \$${item['price']}').join('\n')}\nTotal: \$${total}';
-    } else if (analysis.containsKey('raw_response')) {
-      return analysis['raw_response'];
-    } else {
-      return 'Analysis complete. Data saved.';
-    }
-  }
+  Map<String, dynamic> _combineAnalyses(Map<String, dynamic> basic, String gemini) {
+    // Try to parse Gemini response as JSON
+    try {
+      // Clean the response (remove markdown formatting)
+      String cleanResponse = gemini
+          .replaceAll('```json', '')
+          .replaceAll('```', '')
+          .replaceAll('```\n', '')
+          .trim();
 
-  List<String> _extractIngredients(String text) {
-    const known = [
-      'tomato',
-      'onion',
-      'chicken',
-      'plantain',
-      'rice',
-      'garlic',
-      'cheese',
-      'pepper',
-      'lettuce',
-      'spinach',
-      'potato',
-      'egg',
-      'carrot',
-    ];
-    final lower = text.toLowerCase();
-    return known.where((item) => lower.contains(item)).toList();
+      // Find JSON content
+      final jsonStart = cleanResponse.indexOf('{');
+      final jsonEnd = cleanResponse.lastIndexOf('}');
+      if (jsonStart != -1 && jsonEnd != -1) {
+        cleanResponse = cleanResponse.substring(jsonStart, jsonEnd + 1);
+      }
+
+      final geminiData = jsonDecode(cleanResponse);
+
+      // Combine the analyses
+      return {
+        ...basic,
+        'gemini_analysis': geminiData,
+        'enhanced': true,
+      };
+    } catch (e) {
+      // If JSON parsing fails, return basic analysis with raw Gemini response
+      return {
+        ...basic,
+        'gemini_raw': gemini,
+        'enhanced': false,
+      };
+    }
   }
 
   // Future<void> _analyzeVoiceInput(String transcript) async {
@@ -296,8 +327,6 @@ class _ScanScreenState extends State<ScanScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
@@ -319,7 +348,7 @@ class _ScanScreenState extends State<ScanScreen> {
               child: Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [Colors.black.withOpacity(0.25), Colors.transparent],
+                    colors: [Colors.black.withValues(alpha: 0.25), Colors.transparent],
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                   ),
@@ -359,7 +388,7 @@ class _ScanScreenState extends State<ScanScreen> {
                 height: 280,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(32),
-                  border: Border.all(color: Colors.white.withOpacity(0.35), width: 2),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 2),
                 ),
                 child: Stack(
                   children: [
@@ -401,7 +430,7 @@ class _ScanScreenState extends State<ScanScreen> {
                     margin: const EdgeInsets.symmetric(horizontal: 24),
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.12),
+                      color: Colors.white.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(24),
                     ),
                     child: Column(
@@ -450,7 +479,7 @@ class _ScanScreenState extends State<ScanScreen> {
                   Container(
                     padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.4),
+                      color: Colors.black.withValues(alpha: 0.4),
                       borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
                     ),
                     child: Row(
@@ -473,7 +502,7 @@ class _ScanScreenState extends State<ScanScreen> {
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.3),
+                                  color: Colors.black.withValues(alpha: 0.3),
                                   blurRadius: 16,
                                   offset: const Offset(0, 8),
                                 ),
@@ -502,7 +531,7 @@ class _ScanScreenState extends State<ScanScreen> {
 
   Widget _buildCircleButton({required IconData icon, required VoidCallback onPressed}) {
     return Material(
-      color: Colors.black.withOpacity(0.4),
+      color: Colors.black.withValues(alpha: 0.4),
       shape: const CircleBorder(),
       child: InkWell(
         customBorder: const CircleBorder(),
@@ -519,7 +548,7 @@ class _ScanScreenState extends State<ScanScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D631B).withOpacity(0.8),
+        color: const Color(0xFF0D631B).withValues(alpha: 0.8),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -537,10 +566,10 @@ class _ScanScreenState extends State<ScanScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.white.withOpacity(0.2) : Colors.white.withOpacity(0.08),
+          color: isSelected ? Colors.white.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: isSelected ? const Color(0xFFA3F69C) : Colors.white.withOpacity(0.12),
+            color: isSelected ? const Color(0xFFA3F69C) : Colors.white.withValues(alpha: 0.12),
           ),
         ),
         child: Text(
@@ -564,7 +593,7 @@ class _ScanScreenState extends State<ScanScreen> {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.1),
+              color: Colors.white.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Icon(icon, color: Colors.white, size: 24),
@@ -577,5 +606,55 @@ class _ScanScreenState extends State<ScanScreen> {
         ],
       ),
     );
+  }
+
+  String _formatAnalysisResult(Map<String, dynamic> analysis) {
+    if (analysis.containsKey('gemini_analysis')) {
+      final geminiData = analysis['gemini_analysis'] as Map<String, dynamic>;
+
+      if (geminiData.containsKey('estimated_calories')) {
+        final calories = geminiData['estimated_calories'];
+        final ingredients = (geminiData['main_ingredients'] as List<dynamic>?)?.join(', ') ?? 'N/A';
+        final protein = geminiData['protein_g'] ?? 'N/A';
+        final carbs = geminiData['carbs_g'] ?? 'N/A';
+        final fat = geminiData['fat_g'] ?? 'N/A';
+
+        return '🍽️ Enhanced Analysis:\n'
+               'Calories: $calories kcal\n'
+               'Ingredients: $ingredients\n'
+               'Protein: ${protein}g, Carbs: ${carbs}g, Fat: ${fat}g';
+      } else if (geminiData.containsKey('ingredients')) {
+        final ingredients = (geminiData['ingredients'] as List<dynamic>?)?.join(', ') ?? 'N/A';
+        return '🥬 Detected Ingredients:\n$ingredients';
+      }
+    }
+
+    // Fallback to basic analysis
+    if (analysis.containsKey('labels')) {
+      final labels = (analysis['labels'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [];
+      if (labels.isEmpty) {
+        return 'No food labels were detected. Try a clearer photo of your meal.';
+      }
+
+      final detected = labels.map((item) => item['label']).join(', ');
+      final confidence = labels
+          .map((item) {
+            final score = (item['confidence'] as num?)?.toDouble() ?? 0.0;
+            return '${item['label']}: ${(score * 100).toStringAsFixed(0)}%';
+          })
+          .join(', ');
+
+      return 'Detected: $detected\nConfidence: $confidence';
+    } else if (analysis.containsKey('items')) {
+      final items = analysis['items'] as List<dynamic>? ?? [];
+      final total = analysis['total'] ?? 'N/A';
+      return 'Receipt Items:\n${items.map((item) => '- ${item['name']}: \$${item['price']}').join('\n')}\nTotal: \$$total';
+    } else if (analysis.containsKey('raw_response')) {
+      return analysis['raw_response'];
+    } else if (analysis.containsKey('gemini_raw')) {
+      return 'AI Analysis: ${analysis['gemini_raw']}';
+    } else {
+      return 'Analysis complete. Data saved.';
+    }
   }
 }

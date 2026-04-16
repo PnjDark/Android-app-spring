@@ -14,6 +14,7 @@ class AnalyticsScreen extends StatefulWidget {
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
   int _selectedTab = 0; // 0 = Nutrition, 1 = Financial
 
+  // ignore: unused_element
   Future<void> _exportAsPdf() async {
     final pdf = pw.Document();
 
@@ -247,7 +248,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Card(
-                      color: colorScheme.secondary.withOpacity(0.05),
+                      color: colorScheme.secondary.withValues(alpha: 0.05),
                       child: Padding(
                         padding: const EdgeInsets.all(16),
                         child: Column(
@@ -436,7 +437,7 @@ class _SegmentButton extends StatelessWidget {
             boxShadow: selected
                 ? [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.06),
+                      color: Colors.black.withValues(alpha: 0.06),
                       blurRadius: 4,
                     )
                   ]
@@ -481,7 +482,7 @@ class _BarChartItem extends StatelessWidget {
           height: 100 * (percentage / 100),
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [color.withOpacity(0.3), color],
+              colors: [color.withValues(alpha: 0.3), color],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),

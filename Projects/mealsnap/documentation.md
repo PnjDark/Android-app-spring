@@ -139,6 +139,8 @@ The **FAO African Food Composition Tables** provide baseline nutritional data fo
 | **Mama Grace** | 45 | Homemaker | Manages family meals, wants to reduce food waste | Ingredient-based meal ideas, family nutrition overview |
 | **David** | 28 | Fitness Trainer | Tracking macros, clients ask for meal advice | Precise nutrition data, client report export |
 
+| **Ama** | 52 | Diabetes Patient & Teacher | Managing blood sugar levels, carb counting, avoiding triggers with local foods | Accurate carb tracking, glycemic index estimates for African dishes, low-sugar meal suggestions |
+
 ### 5.2 Secondary Users
 
 - **Nutritionists** — for client meal tracking

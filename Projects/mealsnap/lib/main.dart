@@ -2,10 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'screens/auth/login_screen.dart';
-import 'screens/auth/signup_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/scan_screen.dart';
-import 'screens/settings_screen.dart';
 import 'screens/analytics_screen.dart';
 import 'screens/meal_suggestions_screen.dart';
 import 'services/auth_service.dart';
@@ -186,7 +184,7 @@ class _HomePageState extends State<HomePage> {
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
         type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.white.withOpacity(0.88),
+        backgroundColor: Colors.white.withValues(alpha: 0.88),
         selectedItemColor: const Color(0xFF0D631B),
         unselectedItemColor: const Color(0xFF94A3B8),
         showSelectedLabels: true,
@@ -227,7 +225,7 @@ class HomeContent extends StatelessWidget {
       slivers: [
         SliverAppBar(
           pinned: true,
-          backgroundColor: Colors.white.withOpacity(0.93),
+          backgroundColor: Colors.white.withValues(alpha: 0.93),
           elevation: 0,
           title: Row(
             children: [
@@ -299,7 +297,7 @@ class HomeContent extends StatelessWidget {
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF111D23).withOpacity(0.06),
+                        color: const Color(0xFF111D23).withValues(alpha: 0.06),
                         blurRadius: 32,
                         offset: const Offset(0, 12),
                       ),
@@ -321,7 +319,7 @@ class HomeContent extends StatelessWidget {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFA3F69C).withOpacity(0.2),
+                              color: const Color(0xFFA3F69C).withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: const Text(
@@ -479,7 +477,7 @@ class HomeContent extends StatelessWidget {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF111D23).withOpacity(0.06),
+                        color: const Color(0xFF111D23).withValues(alpha: 0.06),
                         blurRadius: 20,
                         offset: const Offset(0, 8),
                       ),
@@ -646,7 +644,7 @@ class HomeContent extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF111D23).withOpacity(0.06),
+              color: const Color(0xFF111D23).withValues(alpha: 0.06),
               blurRadius: 20,
               offset: const Offset(0, 8),
             ),
@@ -658,7 +656,7 @@ class HomeContent extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
@@ -698,7 +696,7 @@ class HomeContent extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF111D23).withOpacity(0.06),
+            color: const Color(0xFF111D23).withValues(alpha: 0.06),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),

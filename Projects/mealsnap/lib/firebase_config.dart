@@ -7,7 +7,7 @@ import 'firebase_options.dart';
 /// 3. Replace the GEMINI_API_KEY below with your key
 ///    (In production, use environment variables or secure storage)
 
-const String GEMINI_API_KEY = 'AIzaSyCIKIzi22_p-tpvzTgBm5-rQew0vRSNg'; // Replace with your actual API key
+const String geminiApiKey = 'AIzaSyCIKIzi22_p-tpvzTgBm5-rQew0vRSNg'; // Replace with your actual API key
 
 /// Firebase initialization
 /// 
@@ -33,9 +33,9 @@ class FirebaseConfig {
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
-      print('✅ Firebase initialized successfully');
+      print('✅ Firebase initialized successfully'); // ignore: avoid_print
     } catch (e) {
-      print('❌ Firebase initialization error: $e');
+      print('❌ Firebase initialization error: $e'); // ignore: avoid_print
       rethrow;
     }
   }

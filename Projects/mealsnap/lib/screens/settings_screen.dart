@@ -72,7 +72,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onChanged: (value) => setState(() {
               _notificationsEnabled = value;
             }),
-            activeColor: colorScheme.primary,
+            activeThumbColor: colorScheme.primary,
           ),
           SwitchListTile(
             title: const Text('Dark Mode'),
@@ -81,7 +81,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onChanged: (value) => setState(() {
               _darkModeEnabled = value;
             }),
-            activeColor: colorScheme.primary,
+            activeThumbColor: colorScheme.primary,
           ),
           SwitchListTile(
             title: const Text('Sound Feedback'),
@@ -90,7 +90,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onChanged: (value) => setState(() {
               _soundFeedbackEnabled = value;
             }),
-            activeColor: colorScheme.primary,
+            activeThumbColor: colorScheme.primary,
           ),
           const SizedBox(height: 24),
           Text(

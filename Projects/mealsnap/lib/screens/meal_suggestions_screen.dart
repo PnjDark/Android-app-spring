@@ -136,7 +136,7 @@ class _MealSuggestionsScreenState extends State<MealSuggestionsScreen> {
                                 vertical: 4,
                               ),
                               decoration: BoxDecoration(
-                                color: colorScheme.secondary.withOpacity(0.1),
+                                color: colorScheme.secondary.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
@@ -156,7 +156,7 @@ class _MealSuggestionsScreenState extends State<MealSuggestionsScreen> {
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: colorScheme.secondary.withOpacity(0.1),
+                            color: colorScheme.secondary.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Row(
@@ -272,7 +272,7 @@ class _MealCard extends StatelessWidget {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: matchColor.withOpacity(0.9),
+                      color: matchColor.withValues(alpha: 0.9),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Row(
