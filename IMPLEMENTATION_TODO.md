@@ -82,22 +82,27 @@
 
 ### 🟡 **CORE FEATURES** (High value)
 
-#### **[ ] PRIORITY 4: Extended Profile Settings & Health Goals**
+#### **[✅] PRIORITY 4: Extended Profile Settings & Health Goals**
 
-- **Status:** Not Started
+- **Status:** Completed ✅
 - **Time Estimate:** 4-5 hours
 - **Why Fourth:** Users need to set preferences
 - **Subtasks:**
-  - [ ] Create health information fields (age, height, weight, target weight)
-  - [ ] Add dietary preferences checkboxes (vegetarian, vegan, low-carb, no-pork)
-  - [ ] Implement health goal selector (lose_weight, maintain, gain_muscle)
-  - [ ] Add daily calorie goal input
-  - [ ] Add monthly budget input
-  - [ ] Create profile photo upload
-  - [ ] Wire up Firestore save/load
-  - [ ] Add validation for health metrics
+  - [x] Create health information fields (age, height, weight, target weight)
+  - [x] Add dietary preferences checkboxes (vegetarian, vegan, low-carb, no-pork)
+  - [x] Implement health goal selector (lose_weight, maintain, gain_muscle)
+  - [x] Add daily calorie goal input
+  - [x] Add monthly budget input
+  - [x] Create profile photo upload
+  - [x] Wire up Firestore save/load
+  - [x] Add validation for health metrics
 - **Dependencies:** Priority 1
 - **Blocks:** Tasks 6, 7, 10, 11
+- **Completion Date:** April 16, 2026
+
+**Files Updated:**
+- `lib/screens/profile_settings_screen.dart` — profile settings form, Firestore load/save, photo upload, validation
+- `lib/screens/profile_screen.dart` — stateful user profile summary with saved health goals, calorie/budget targets, dietary preferences and cuisines
 
 ---
 

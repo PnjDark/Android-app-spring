@@ -54,6 +54,34 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   List<String> _selectedPreferences = [];
   List<String> _selectedCuisines = [];
 
+  String? _validateOptionalNumber(String? value, String label) {
+    if (value == null || value.trim().isEmpty) {
+      return null;
+    }
+    final parsed = double.tryParse(value.trim());
+    if (parsed == null) {
+      return 'Enter a valid $label';
+    }
+    if (parsed < 0) {
+      return '$label cannot be negative';
+    }
+    return null;
+  }
+
+  String? _validateRequiredNumber(String? value, String label) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Enter your $label';
+    }
+    final parsed = double.tryParse(value.trim());
+    if (parsed == null) {
+      return 'Enter a valid $label';
+    }
+    if (parsed < 0) {
+      return '$label cannot be negative';
+    }
+    return null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -132,7 +160,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     try {
       final uploadTask = await ref.putFile(file);
       final url = await uploadTask.ref.getDownloadURL();
-      await _firestoreService.updateUserProfile(currentUser.uid, name: _nameController.text.trim(), photoUrl: url);
+      final displayName = _nameController.text.trim().isNotEmpty ? _nameController.text.trim() : (_user?.name ?? '');
+      await _firestoreService.updateUserProfile(currentUser.uid, name: displayName, photoUrl: url);
       if (!mounted) return;
       setState(() {
         _profilePhotoUrl = url;
@@ -186,6 +215,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Profile settings saved.')),
       );
+      await _loadUserSettings();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -215,6 +245,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               padding: const EdgeInsets.all(20),
               child: Form(
                 key: _formKey,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -289,6 +320,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                             ),
                             keyboardType: TextInputType.number,
                             textInputAction: TextInputAction.next,
+                            validator: (value) => _validateOptionalNumber(value, 'age'),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -302,6 +334,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                             ),
                             keyboardType: TextInputType.number,
                             textInputAction: TextInputAction.next,
+                            validator: (value) => _validateOptionalNumber(value, 'height'),
                           ),
                         ),
                       ],
@@ -318,6 +351,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                             ),
                             keyboardType: TextInputType.number,
                             textInputAction: TextInputAction.next,
+                            validator: (value) => _validateOptionalNumber(value, 'current weight'),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -330,6 +364,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                             ),
                             keyboardType: TextInputType.number,
                             textInputAction: TextInputAction.next,
+                            validator: (value) => _validateOptionalNumber(value, 'target weight'),
                           ),
                         ),
                       ],
@@ -350,6 +385,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                       ),
                       keyboardType: TextInputType.number,
                       textInputAction: TextInputAction.next,
+                      validator: (value) => _validateRequiredNumber(value, 'daily calorie goal'),
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
@@ -360,6 +396,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                       ),
                       keyboardType: TextInputType.number,
                       textInputAction: TextInputAction.next,
+                      validator: (value) => _validateRequiredNumber(value, 'monthly budget'),
                     ),
                     const SizedBox(height: 24),
                     Text(
