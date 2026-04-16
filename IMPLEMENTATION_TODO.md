@@ -33,37 +33,50 @@
 
 ---
 
-#### **[ ] PRIORITY 2: Calories Tracker with Macros Breakdown**
+#### **[✅] PRIORITY 2: Calories Tracker with Macros Breakdown**
 
-- **Status:** Not Started
+- **Status:** COMPLETED ✅
 - **Time Estimate:** 3-4 hours
 - **Why Second:** Core value proposition
 - **Subtasks:**
-  - [ ] Create NutritionCard widget showing calories + macros
-  - [ ] Implement macro percentage calculations
-  - [ ] Add progress indicators for protein/carbs/fats
-  - [ ] Create nutrition lookup table (local JSON or Firestore)
-  - [ ] Wire up to meal data from Firestore
-  - [ ] Add visual indicators (color-coded bars)
-- **Dependencies:** Priority 1
+  - [x] Create NutritionCard widget showing calories + macros
+  - [x] Implement macro percentage calculations
+  - [x] Add progress indicators for protein/carbs/fats
+  - [x] Create nutrition lookup table (local JSON or Firestore)
+  - [x] Wire up to meal data from Firestore
+  - [x] Add visual indicators (color-coded bars)
+- **Dependencies:** Priority 1 ✅
 - **Blocks:** Tasks 3, 4, 6, 8
+- **Completion Date:** April 16, 2026
+
+**Files Created:**
+- `lib/widgets/nutrition_card.dart` — NutritionCard & NutritionCompactCard widgets with macro bars, color-coded progress, and smart recommendations
+- `lib/widgets/nutrition_sections.dart` — Helper widgets (DailyNutritionSection, WeeklyNutritionSummary, MealNutritionPreview) for real-time Firestore integration
+- `lib/screens/home_screen_example.dart` — Complete example showing how to integrate nutrition widgets into home screen with FutureBuilder patterns
 
 ---
 
-#### **[ ] PRIORITY 3: Recent Activities Feed on Home Screen**
+#### **[✅] PRIORITY 3: Recent Activities Feed on Home Screen**
 
-- **Status:** Not Started
+- **Status:** COMPLETED ✅
 - **Time Estimate:** 3-4 hours
 - **Why Third:** Makes home screen functional and engaging
 - **Subtasks:**
-  - [ ] Create query for last 7 days of meals
-  - [ ] Build MealHistoryItem widget
-  - [ ] Implement ListView with Firestore data
-  - [ ] Add "See all" navigation to full history
-  - [ ] Add quick actions (camera, gallery buttons)
-  - [ ] Handle empty state (no meals yet)
-- **Dependencies:** Priority 1, 2
+  - [x] Create query for last 7 days of meals
+  - [x] Build MealHistoryItem widget
+  - [x] Implement ListView with Firestore data
+  - [x] Add "See all" navigation to full history
+  - [x] Add quick actions (camera, gallery buttons)
+  - [x] Handle empty state (no meals yet)
+- **Dependencies:** Priority 1 ✅, 2 ✅
 - **Blocks:** Tasks 4, 6, 10
+- **Completion Date:** April 16, 2026
+
+**Files Created:**
+- `lib/widgets/meal_history_item.dart` — MealHistoryItem & MealHistoryItemCompact widgets with full meal card display, macro breakdown, source icons, and delete/edit actions
+- `lib/screens/history_screen.dart` — Full HistoryScreen with date filtering (7/30/90/365 days), meal grouping by date, daily totals, and meal deletion
+- `lib/widgets/recent_activities_section.dart` — RecentActivitiesSection widget for embedding in home screen with compact and full view options
+- `lib/screens/home_screen_example.dart` — Updated with RecentActivitiesSection integration and navigation to HistoryScreen
 
 ---
 

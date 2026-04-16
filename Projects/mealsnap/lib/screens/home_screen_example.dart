@@ -3,6 +3,8 @@ import '../models/firebase_models.dart';
 import '../services/firestore_service.dart';
 import '../widgets/nutrition_card.dart';
 import '../widgets/nutrition_sections.dart';
+import '../widgets/recent_activities_section.dart';
+import 'history_screen.dart';
 
 /// Example Home Screen showing how to use nutrition widgets with Firestore data
 class HomeScreenExample extends StatefulWidget {
@@ -68,27 +70,24 @@ class _HomeScreenExampleState extends State<HomeScreenExample> {
                 ),
                 const SizedBox(height: 24),
 
-                // Recent Meals
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Recent Meals',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        // Navigate to full history screen
-                        // Navigator.push(context, MaterialPageRoute(builder: (_) => HistoryScreen(...)));
-                      },
-                      child: const Text('See All'),
-                    ),
-                  ],
+                // Recent Activities
+                RecentActivitiesSection(
+                  userId: widget.userId,
+                  firestoreService: widget.firestoreService,
+                  mealCount: 5,
+                  onSeeAll: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => HistoryScreen(
+                          userId: widget.userId,
+                          firestoreService: widget.firestoreService,
+                        ),
+                      ),
+                    );
+                  },
+                  showCompactView: false,
                 ),
-                const SizedBox(height: 12),
-                _buildRecentMealsList(),
               ],
             ),
           ),
@@ -141,90 +140,12 @@ class _HomeScreenExampleState extends State<HomeScreenExample> {
     );
   }
 
-  /// Builds the recent meals list with real-time data
-  Widget _buildRecentMealsList() {
-    return FutureBuilder<List<MealModel>>(
-      future: _getRecentMeals(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const SizedBox(
-            height: 200,
-            child: Center(child: CircularProgressIndicator()),
-          );
-        }
-
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
-
-        final meals = snapshot.data ?? [];
-
-        if (meals.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.fastfood_outlined,
-                    size: 48,
-                    color: Colors.grey[400],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No meals logged yet',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: Colors.grey[600],
-                        ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Start by scanning a meal',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey[500],
-                        ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-
-        return ListView.separated(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: meals.length,
-          separatorBuilder: (context, index) => const SizedBox(height: 8),
-          itemBuilder: (context, index) {
-            return MealNutritionPreview(
-              meal: meals[index],
-              onTap: () {
-                // Handle meal tap - show details or edit
-              },
-            );
-          },
-        );
-      },
-    );
-  }
-
   /// Helper method to get today's daily stats
   Future<DailyStatsModel?> _getDailyStats() {
     final now = DateTime.now();
     final todayStr =
         '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     return widget.firestoreService.getDailyStats(widget.userId, todayStr);
-  }
-
-  /// Helper method to get recent meals
-  Future<List<MealModel>> _getRecentMeals() {
-    final now = DateTime.now();
-    final sevenDaysAgo = now.subtract(const Duration(days: 7));
-    return widget.firestoreService.getMealsByDateRange(
-      widget.userId,
-      startDate: sevenDaysAgo,
-      endDate: now,
-    );
   }
 }
 
