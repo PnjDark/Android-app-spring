@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'firebase_models.dart';
+import '../models/firebase_models.dart';
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -20,7 +20,7 @@ class FirestoreService {
       }
       return null;
     } catch (e) {
-      print('Error fetching user: $e');
+      print('Error fetching user: $e'); // ignore: avoid_print
       return null;
     }
   }
@@ -38,10 +38,13 @@ class FirestoreService {
     required String name,
     String? photoUrl,
   }) async {
-    await _db.collection('users').doc(userId).update({
+    final updateData = <String, dynamic>{
       'name': name,
-      if (photoUrl != null) 'photoUrl': photoUrl,
-    });
+    };
+    if (photoUrl != null) {
+      updateData['photoUrl'] = photoUrl;
+    }
+    await _db.collection('users').doc(userId).update(updateData);
   }
 
   // ==================== MEAL OPERATIONS ====================
@@ -74,7 +77,7 @@ class FirestoreService {
 
       return snapshot.docs.map((doc) => MealModel.fromFirestore(doc)).toList();
     } catch (e) {
-      print('Error fetching meals: $e');
+      print('Error fetching meals: $e'); // ignore: avoid_print
       return [];
     }
   }
@@ -94,7 +97,7 @@ class FirestoreService {
 
       return snapshot.docs.map((doc) => MealModel.fromFirestore(doc)).toList();
     } catch (e) {
-      print('Error fetching recent meals: $e');
+      print('Error fetching recent meals: $e'); // ignore: avoid_print
       return [];
     }
   }
@@ -118,7 +121,7 @@ class FirestoreService {
 
       return frequency;
     } catch (e) {
-      print('Error fetching frequent foods: $e');
+      print('Error fetching frequent foods: $e'); // ignore: avoid_print
       return {};
     }
   }
@@ -139,7 +142,7 @@ class FirestoreService {
       }
       return null;
     } catch (e) {
-      print('Error fetching daily stats: $e');
+      print('Error fetching daily stats: $e'); // ignore: avoid_print
       return null;
     }
   }
@@ -162,7 +165,7 @@ class FirestoreService {
 
       return snapshot.docs.map((doc) => DailyStatsModel.fromFirestore(doc)).toList();
     } catch (e) {
-      print('Error fetching daily stats range: $e');
+      print('Error fetching daily stats range: $e'); // ignore: avoid_print
       return [];
     }
   }
@@ -234,7 +237,7 @@ class FirestoreService {
         'budgetUsedPercent': (total / monthlyBudget) * 100,
       };
     } catch (e) {
-      print('Error fetching monthly spending: $e');
+      print('Error fetching monthly spending: $e'); // ignore: avoid_print
       return {
         'total': 0,
         'byCategory': {},
@@ -262,7 +265,7 @@ class FirestoreService {
 
       return snapshot.docs.map((doc) => ExpenseModel.fromFirestore(doc)).toList();
     } catch (e) {
-      print('Error fetching expenses: $e');
+      print('Error fetching expenses: $e'); // ignore: avoid_print
       return [];
     }
   }
@@ -331,7 +334,7 @@ class FirestoreService {
         'mealCount': meals.docs.length,
       };
     } catch (e) {
-      print('Error fetching user total stats: $e');
+      print('Error fetching user total stats: $e'); // ignore: avoid_print
       return {
         'totalCalories': 0,
         'totalProtein': 0,
