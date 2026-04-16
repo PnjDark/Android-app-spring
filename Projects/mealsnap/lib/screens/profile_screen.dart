@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/auth_service.dart';
-import 'settings_screen.dart';
+import 'profile_settings_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -29,7 +29,7 @@ class ProfileScreen extends StatelessWidget {
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => const SettingsScreen(),
+                  builder: (_) => const ProfileSettingsScreen(),
                 ),
               );
             },
@@ -139,7 +139,11 @@ class ProfileScreen extends StatelessWidget {
                       ),
                       TextButton(
                         onPressed: () {
-                          // TODO: Edit health goals
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const ProfileSettingsScreen(),
+                            ),
+                          );
                         },
                         child: const Text('Update'),
                       ),
@@ -314,7 +318,7 @@ class ProfileScreen extends StatelessWidget {
                           onTap: () {
                             Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (_) => const SettingsScreen(),
+                                builder: (_) => const ProfileSettingsScreen(),
                               ),
                             );
                           },
@@ -329,7 +333,7 @@ class ProfileScreen extends StatelessWidget {
                           onTap: () {
                             Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (_) => const SettingsScreen(),
+                                builder: (_) => const ProfileSettingsScreen(),
                               ),
                             );
                           },
@@ -344,7 +348,7 @@ class ProfileScreen extends StatelessWidget {
                           onTap: () {
                             Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (_) => const SettingsScreen(),
+                                builder: (_) => const ProfileSettingsScreen(),
                               ),
                             );
                           },
