@@ -4,6 +4,7 @@ import '../services/firestore_service.dart';
 import '../widgets/nutrition_card.dart';
 import '../widgets/nutrition_sections.dart';
 import '../widgets/recent_activities_section.dart';
+import '../widgets/suggestions_section.dart';
 import 'history_screen.dart';
 
 /// Example Home Screen showing how to use nutrition widgets with Firestore data
@@ -67,6 +68,14 @@ class _HomeScreenExampleState extends State<HomeScreenExample> {
                 WeeklyNutritionSummary(
                   userId: widget.userId,
                   firestoreService: widget.firestoreService,
+                ),
+                const SizedBox(height: 24),
+
+                // Personalized Suggestions
+                SuggestionsSection(
+                  userId: widget.userId,
+                  firestoreService: widget.firestoreService,
+                  showCompactView: false,
                 ),
                 const SizedBox(height: 24),
 
