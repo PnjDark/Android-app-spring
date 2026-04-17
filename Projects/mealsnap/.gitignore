@@ -31,6 +31,10 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+**/android/app/build/
+**/*.apk
+**/*.aab
+**/*.ipa
 /coverage/
 
 # Symbolication related
@@ -39,7 +43,16 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
+# Android Studio related
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Exclude Android heap profiling dumps
+android/*.hprof
+
+# Firebase Configuration Files
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+lib/firebase_options.dart
+
