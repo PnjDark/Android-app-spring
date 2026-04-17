@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
+import 'package:material_symbols_icons/symbols.dart';
+import 'package:fl_chart/fl_chart.dart';
+import '../core/app_theme.dart';
 
 class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({super.key});
@@ -12,64 +11,42 @@ class AnalyticsScreen extends StatefulWidget {
 }
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
-  int _selectedTab = 0; // 0 = Nutrition, 1 = Financial
-
-  // ignore: unused_element
-  Future<void> _exportAsPdf() async {
-    final pdf = pw.Document();
-
-    pdf.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        build: (context) {
-          return pw.Padding(
-            padding: const pw.EdgeInsets.all(24),
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Text('MealSnap+ Analytics',
-                    style: pw.TextStyle(fontSize: 26, fontWeight: pw.FontWeight.bold)),
-                pw.SizedBox(height: 18),
-                pw.Text('Overview', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
-                pw.SizedBox(height: 12),
-                pw.Bullet(text: 'Nutrition summary: 1,247 calories tracked.'),
-                pw.Bullet(text: 'Macros on track: Protein, Carbs, Fat.'),
-                pw.Bullet(text: 'Budget tracking: 64% spent, \$180 remaining.'),
-                pw.SizedBox(height: 18),
-                pw.Text('Recommendations', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
-                pw.SizedBox(height: 12),
-                pw.Text('Keep capturing receipts and meal photos to get better insights.'),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-
-    await Printing.layoutPdf(
-      onLayout: (format) => pdf.save(),
-    );
-  }
+  int _selectedIndex = 0;
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          'MealSnap+',
-          style: GoogleFonts.plusJakartaSans(
-            fontWeight: FontWeight.w800,
-            fontSize: 20,
-          ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: Row(
+          children: [
+            const Icon(Symbols.restaurant, color: AppTheme.primary),
+            const SizedBox(width: 8),
+            Text(
+              'MealSnap+',
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    color: AppTheme.primary,
+                    letterSpacing: -1,
+                  ),
+            ),
+          ],
         ),
         actions: [
           Padding(
-            padding: const EdgeInsets.all(8),
-            child: CircleAvatar(
-              backgroundColor: colorScheme.surfaceContainerHighest,
-              child: const Icon(Icons.person),
+            padding: const EdgeInsets.only(right: 16),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: AppTheme.primaryContainer.withOpacity(0.2), width: 2),
+                image: const DecorationImage(
+                  image: NetworkImage(
+                      'https://lh3.googleusercontent.com/aida-public/AB6AXuDIjyiMab1soPAEJNtiC2tgE7DKEoRONUu6St0cErxWOe0dcoX3a-tzhiGlzTkbzJimjSQo1S2JkGqcQ7BLP84RTzbLdGf_ARggtJdkU6Yxc-dYzsb9TzmD_Eao9vnFJXWZQNjvWhA0ab3Wxrn85jqOyFgBdVdVfDYt9hNlel4HivPIPAZI8XQZfbJ0coI8ZFnibycbwE5HCeIVIr0kGPtsEy7xleARuzej5JZ4rBzXyuO0gccfBTVFrndq__ROtrjPExtaBDexlJ00'),
+                  fit: BoxFit.cover,
+                ),
+              ),
             ),
           ),
         ],
@@ -77,428 +54,395 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Segmented Control
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _SegmentButton(
-                      label: 'Nutrition',
-                      selected: _selectedTab == 0,
-                      onPressed: () {
-                        setState(() {
-                          _selectedTab = 0;
-                        });
-                      },
-                    ),
-                  ),
-                  Expanded(
-                    child: _SegmentButton(
-                      label: 'Financial',
-                      selected: _selectedTab == 1,
-                      onPressed: () {
-                        setState(() {
-                          _selectedTab = 1;
-                        });
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
+            _buildSegmentedControl(),
+            const SizedBox(height: 32),
+            _buildNutritionOverview(context),
+            const SizedBox(height: 32),
+            _buildBentoGrid(context),
+            const SizedBox(height: 32),
+            _buildFinancialHealth(context),
+            const SizedBox(height: 32),
+            _buildExportButton(context),
+            const SizedBox(height: 100),
+          ],
+        ),
+      ),
+    );
+  }
 
-            if (_selectedTab == 0) ...[
-              // Nutrition Tab
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '7-DAY ANALYSIS',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: colorScheme.primary,
-                            ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Calorie Intake',
-                        style: Theme.of(context).textTheme.headlineMedium,
-                      ),
-                    ],
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        '13,440',
-                        style:
-                            Theme.of(context).textTheme.displaySmall?.copyWith(
-                                  color: colorScheme.primary,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                      ),
-                      Text(
-                        'Total Kcal',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: colorScheme.outline,
-                            ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              // Bar Chart
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          _BarChartItem(
-                            label: 'MON',
-                            percentage: 75,
-                            color: colorScheme.primary,
-                          ),
-                          _BarChartItem(
-                            label: 'TUE',
-                            percentage: 85,
-                            color: colorScheme.primary,
-                          ),
-                          _BarChartItem(
-                            label: 'WED',
-                            percentage: 65,
-                            color: colorScheme.primary,
-                          ),
-                          _BarChartItem(
-                            label: 'THU',
-                            percentage: 95,
-                            color: colorScheme.primary,
-                          ),
-                          _BarChartItem(
-                            label: 'FRI',
-                            percentage: 70,
-                            color: colorScheme.primary,
-                          ),
-                          _BarChartItem(
-                            label: 'SAT',
-                            percentage: 80,
-                            color: colorScheme.primary,
-                          ),
-                          _BarChartItem(
-                            label: 'SUN',
-                            percentage: 60,
-                            color: colorScheme.primary,
-                          ),
-                        ],
-                      ),
-                    ],
+  Widget _buildSegmentedControl() {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(9999),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _selectedIndex = 0),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: _selectedIndex == 0 ? AppTheme.surfaceContainerLowest : Colors.transparent,
+                  borderRadius: BorderRadius.circular(9999),
+                  boxShadow: _selectedIndex == 0
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          )
+                        ]
+                      : null,
+                ),
+                child: Text(
+                  'Nutrition',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: _selectedIndex == 0 ? AppTheme.primary : AppTheme.outline,
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
-
-              // Summary Cards
-              Row(
-                children: [
-                  Expanded(
-                    child: Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(Icons.speed, color: colorScheme.primary),
-                            const SizedBox(height: 12),
-                            Text(
-                              'WEEKLY AVG',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelSmall
-                                  ?.copyWith(
-                                    color: colorScheme.outline,
-                                  ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '1,920 kcal',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+            ),
+          ),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _selectedIndex = 1),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: _selectedIndex == 1 ? AppTheme.surfaceContainerLowest : Colors.transparent,
+                  borderRadius: BorderRadius.circular(9999),
+                  boxShadow: _selectedIndex == 1
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          )
+                        ]
+                      : null,
+                ),
+                child: Text(
+                  'Expenses',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: _selectedIndex == 1 ? AppTheme.primary : AppTheme.outline,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Card(
-                      color: colorScheme.secondary.withValues(alpha: 0.05),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(Icons.restaurant,
-                                color: colorScheme.secondary),
-                            const SizedBox(height: 12),
-                            Text(
-                              'TOP CATEGORY',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelSmall
-                                  ?.copyWith(
-                                    color: colorScheme.outline,
-                                  ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'African Dishes',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ] else ...[
-              // Financial Tab
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNutritionOverview(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '7-DAY ANALYSIS',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: AppTheme.primary.withOpacity(0.7),
+                        fontSize: 10,
+                        letterSpacing: 2,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text('Calorie Intake', style: Theme.of(context).textTheme.headlineSmall),
+              ],
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '13,440',
+                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                        color: AppTheme.primary,
+                        fontSize: 32,
+                      ),
+                ),
+                Text(
+                  'TOTAL KCAL',
+                  style: TextStyle(
+                    color: AppTheme.outline,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        Container(
+          height: 200,
+          padding: const EdgeInsets.fromLTRB(16, 32, 16, 8),
+          decoration: BoxDecoration(
+            color: AppTheme.surfaceContainerLowest,
+            borderRadius: BorderRadius.circular(24),
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [AppTheme.primary.withOpacity(0.1), Colors.transparent],
+            ),
+          ),
+          child: BarChart(
+            BarChartData(
+              alignment: BarChartAlignment.spaceAround,
+              maxY: 100,
+              barTouchData: BarTouchData(enabled: true),
+              titlesData: FlTitlesData(
+                show: true,
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    getTitlesWidget: (value, meta) {
+                      const days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Text(
+                          days[value.toInt() % 7],
+                          style: TextStyle(
+                            color: value.toInt() == 3 ? AppTheme.primary : AppTheme.outline,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 10,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              ),
+              gridData: const FlGridData(show: false),
+              borderData: FlBorderData(show: false),
+              barGroups: [
+                _buildBarGroup(0, 75),
+                _buildBarGroup(1, 85),
+                _buildBarGroup(2, 65),
+                _buildBarGroup(3, 95, isHighlighted: true),
+                _buildBarGroup(4, 70),
+                _buildBarGroup(5, 80),
+                _buildBarGroup(6, 60),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  BarChartGroupData _buildBarGroup(int x, double y, {bool isHighlighted = false}) {
+    return BarChartGroupData(
+      x: x,
+      barRods: [
+        BarChartRodData(
+          toY: y,
+          color: AppTheme.primary,
+          width: 24,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(9999)),
+          backDrawRodData: BackgroundBarChartRodData(
+            show: true,
+            toY: 100,
+            color: AppTheme.primary.withOpacity(0.1),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBentoGrid(BuildContext context) {
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 2,
+      crossAxisSpacing: 16,
+      mainAxisSpacing: 16,
+      children: [
+        _buildBentoItem(
+          context,
+          'Weekly Avg',
+          '1,920 kcal',
+          Symbols.avg_pace,
+          AppTheme.primary,
+          AppTheme.surfaceContainerLow,
+        ),
+        _buildBentoItem(
+          context,
+          'Top Category',
+          'African Dishes',
+          Symbols.restaurant_menu,
+          AppTheme.secondary,
+          AppTheme.secondary.withOpacity(0.05),
+          borderColor: AppTheme.secondary.withOpacity(0.1),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBentoItem(BuildContext context, String label, String value, IconData icon, Color color, Color bg, {Color? borderColor}) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(24),
+        border: borderColor != null ? Border.all(color: borderColor) : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Icon(icon, color: color, size: 32),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label.toUpperCase(),
+                style: TextStyle(
+                  color: AppTheme.outline,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 18),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFinancialHealth(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Financial Health', style: Theme.of(context).textTheme.titleLarge),
+            const Text('View Details', style: TextStyle(color: AppTheme.tertiary, fontWeight: FontWeight.bold, fontSize: 14)),
+          ],
+        ),
+        const SizedBox(height: 24),
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.7),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withOpacity(0.4)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.02),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         'MONTHLY BUDGET',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: colorScheme.outline,
-                            ),
+                        style: TextStyle(
+                          color: AppTheme.outline,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1,
+                        ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        'Financial Health',
-                        style: Theme.of(context).textTheme.headlineMedium,
-                      ),
-                    ],
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
                       RichText(
                         text: TextSpan(
                           children: [
                             TextSpan(
                               text: '\$320 ',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .headlineSmall
-                                  ?.copyWith(
-                                    color: colorScheme.primary,
-                                    fontWeight: FontWeight.w800,
-                                  ),
+                              style: Theme.of(context).textTheme.headlineMedium,
                             ),
-                            TextSpan(
+                            const TextSpan(
                               text: '/ \$500',
-                              style:
-                                  Theme.of(context).textTheme.titleMedium,
+                              style: TextStyle(color: Colors.grey, fontSize: 18, fontWeight: FontWeight.normal),
                             ),
                           ],
                         ),
                       ),
-                      Text(
-                        '64% Spent',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: colorScheme.outline,
-                            ),
-                      ),
                     ],
+                  ),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.tertiary.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Symbols.payments, color: AppTheme.tertiary),
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
-
-              // Progress Bar
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: 0.64,
-                          minHeight: 12,
-                          backgroundColor:
-                              colorScheme.surfaceContainerHigh,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            colorScheme.tertiary,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            '64% Spent',
-                            style: Theme.of(context).textTheme.labelSmall,
-                          ),
-                          Text(
-                            '\$180 Remaining',
-                            style: Theme.of(context).textTheme.labelSmall,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+              const SizedBox(height: 20),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: const LinearProgressIndicator(
+                  value: 0.64,
+                  minHeight: 12,
+                  backgroundColor: AppTheme.surfaceContainer,
+                  valueColor: AlwaysStoppedAnimation<Color>(AppTheme.tertiaryContainer),
                 ),
+              ),
+              const SizedBox(height: 12),
+              const Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('64% SPENT', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.outline, letterSpacing: 1)),
+                  Text('\$180 REMAINING', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.outline, letterSpacing: 1)),
+                ],
               ),
             ],
-            const SizedBox(height: 32),
-
-            // Export Button
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: colorScheme.inverseSurface,
-                  foregroundColor: colorScheme.onInverseSurface,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                ),
-                onPressed: () {
-                  // TODO: Implement export as PDF
-                },
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.picture_as_pdf, size: 18),
-                    SizedBox(width: 8),
-                    Text('Export as PDF'),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SegmentButton extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onPressed;
-
-  const _SegmentButton({
-    required this.label,
-    required this.selected,
-    required this.onPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: selected
-                ? colorScheme.surfaceContainerLowest
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.06),
-                      blurRadius: 4,
-                    )
-                  ]
-                : null,
           ),
-          child: Center(
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: selected
-                        ? colorScheme.primary
-                        : colorScheme.outline,
-                  ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _BarChartItem extends StatelessWidget {
-  final String label;
-  final double percentage;
-  final Color color;
-
-  const _BarChartItem({
-    required this.label,
-    required this.percentage,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        Container(
-          width: 20,
-          height: 100 * (percentage / 100),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [color.withValues(alpha: 0.3), color],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(4),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: colorScheme.outline,
-              ),
         ),
       ],
+    );
+  }
+
+  Widget _buildExportButton(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: () {},
+        icon: const Icon(Symbols.picture_as_pdf, color: Colors.white),
+        label: const Text('Export PDF Report', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF263238),
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
+        ),
+      ),
     );
   }
 }
