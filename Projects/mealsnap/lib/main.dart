@@ -1,7 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:material_symbols_icons/symbols.dart';
+// import 'package:material_symbols_icons/symbols.dart'; // Fixed: use Icons instead
+import 'package:google_fonts/google_fonts.dart';
+
 import 'core/app_theme.dart';
 import 'screens/home_screen.dart';
 import 'screens/profile_screen.dart';
@@ -659,7 +661,7 @@ class HomeContent extends StatelessWidget {
             destinations: const [
               NavigationDestination(
                 icon: Icon(Symbols.home),
-                selectedIcon: Icon(Symbols.home, fill: 1),
+Icon(Icons.home, fill: true),
                 label: 'Home',
               ),
               NavigationDestination(
