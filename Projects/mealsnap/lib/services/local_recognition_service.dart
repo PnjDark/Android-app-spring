@@ -1,11 +1,32 @@
 import 'dart:io';
-
 import 'package:google_mlkit_image_labeling/google_mlkit_image_labeling.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
 class LocalRecognitionService {
   final ImageLabeler _imageLabeler;
   final TextRecognizer _textRecognizer;
+
+  // Clean, broad food categories - no duplicates, covers most cases
+  static final Set<String> _foodKeywords = {
+    // Categories
+    'food', 'dish', 'meal', 'vegetable', 'fruit', 'meat', 'fish', 'grain', 'bread', 'pasta',
+    'rice', 'soup', 'salad', 'dessert', 'snack', 'beverage', 'drink',
+    
+    // Proteins
+    'chicken', 'beef', 'pork', 'lamb', 'goat', 'fish', 'shrimp', 'egg', 'cheese', 'tofu',
+    
+    // Carbs
+    'rice', 'pasta', 'noodle', 'bread', 'potato', 'yam', 'cassava', 'plantain', 'corn',
+    
+    // Veggies/Fruits
+    'tomato', 'onion', 'lettuce', 'carrot', 'apple', 'banana', 'orange', 'grape',
+    
+    // African staples
+    'jollof', 'fufu', 'egusi', 'moi', 'chin', 'suya', 'plantain', 'yam', 'cassava', 'gari',
+    
+    // Generic indicators
+    'cook', 'eat', 'dinner', 'lunch', 'breakfast', 'ingredient', 'recipe',
+  };
 
   LocalRecognitionService({double confidenceThreshold = 0.5})
       : _imageLabeler = ImageLabeler(
@@ -20,27 +41,25 @@ class LocalRecognitionService {
     final inputImage = InputImage.fromFilePath(imageFile.path);
     final labels = await _imageLabeler.processImage(inputImage);
 
-    final labelData = labels.map((label) {
-      return <String, Object?>{
-        'label': label.label,
-        'confidence': label.confidence,
-        'index': label.index,
-      };
+    final labelData = labels.map((label) => <String, Object?>{
+      'label': label.label.toLowerCase(),
+      'confidence': label.confidence,
+      'index': label.index,
     }).toList();
 
-    final filtered = labelData.where((item) {
-      final label = (item['label'] as String).toLowerCase();
-      return _isFoodLabel(label);
-    }).toList();
+    // Filter using broad keywords - more reliable than exact matches
+    final foodLabels = labelData.where((item) => _isFoodLabel(item['label'] as String)).toList();
 
-    final selectedLabels = filtered.isNotEmpty
-        ? filtered
-        : labelData.take(6).toList();
+    final selectedLabels = foodLabels.isNotEmpty
+        ? foodLabels.take(5).toList()  // Top 5 food labels
+        : labelData.take(3).toList();  // Fallback to top 3 any labels
 
     return {
       'mode': ingredientsMode ? 'ingredients' : 'meal',
       'labels': selectedLabels,
-      'raw_labels': labelData,
+      'all_labels': labelData,
+      'food_detected': foodLabels.isNotEmpty,
+      'top_labels': selectedLabels.map((l) => l!['label']).take(3).toList(),
     };
   }
 
@@ -51,75 +70,53 @@ class LocalRecognitionService {
     final lines = recognizedText.blocks
         .expand((block) => block.lines)
         .map((line) => line.text.trim())
-        .where((line) => line.isNotEmpty)
+        .where((line) => line.isNotEmpty && line.length > 2)
         .toList();
 
-    final items = <Map<String, Object>>[];
-    String? total;
-    final itemPattern = RegExp(r'^(.+?)\s+\$?([0-9]+(?:\.[0-9]{1,2})?)$');
-    final totalPattern = RegExp(r'total[:\s]*\$?([0-9]+(?:\.[0-9]{1,2})?)', caseSensitive: false);
+    // Improved regex for prices and items
+    final itemRegex = RegExp(r'^(.+?)\s+[\$£€₦]?(\d+(?:\.\d{2})?)(?:\s+x?\s*(\d+))?$');
+    final totalRegex = RegExp(r'(?:total|amount|sum|balance)[:\s]*[\$£€₦]?(\d+(?:\.\d{2})?)', caseSensitive: false);
 
+    final items = <Map<String, dynamic>>[];
+    double subtotal = 0.0;
+    
     for (final line in lines) {
-      final lower = line.toLowerCase();
-      final totalMatch = totalPattern.firstMatch(lower);
+      final totalMatch = totalRegex.firstMatch(line.toLowerCase());
       if (totalMatch != null) {
-        total = totalMatch.group(1)?.trim();
+        // Total found, skip further processing
+        break;
       }
 
-      final itemMatch = itemPattern.firstMatch(line);
-      if (itemMatch != null) {
-        final name = itemMatch.group(1)?.trim() ?? '';
-        final price = double.tryParse(itemMatch.group(2) ?? '0') ?? 0.0;
-        items.add({'name': name, 'price': price});
+      final itemMatch = itemRegex.firstMatch(line);
+      if (itemMatch != null && itemMatch.group(1)!.trim().isNotEmpty) {
+        final name = itemMatch.group(1)!.trim();
+        final priceStr = itemMatch.group(2)!;
+        final qtyStr = itemMatch.group(3);
+        final price = double.tryParse(priceStr) ?? 0.0;
+        final qty = qtyStr != null ? int.tryParse(qtyStr) ?? 1 : 1;
+        
+        subtotal += price * qty;
+        items.add({
+          'name': name,
+          'price_per_unit': price,
+          'quantity': qty,
+          'total_price': price * qty,
+        });
       }
     }
 
     return {
       'mode': 'receipt',
       'items': items,
-      'total': total,
+      'subtotal': subtotal,
       'raw_text': recognizedText.text,
-      'lines': lines,
+      'line_count': lines.length,
     };
   }
 
   bool _isFoodLabel(String label) {
-    const foodKeywords = [
-      // Common Western foods
-      'apple', 'banana', 'bread', 'cheese', 'chicken', 'pizza', 'burger',
-      'salad', 'soup', 'rice', 'pasta', 'egg', 'fish', 'steak', 'sandwich',
-      'sushi', 'coffee', 'cake', 'pancake', 'fruit', 'vegetable', 'meat',
-      'tomato', 'onion', 'potato', 'carrot', 'lettuce', 'curry', 'noodle',
-      'waffle', 'donut', 'beans', 'taco',
-
-      // African dishes and ingredients
-      'jollof', 'rice', 'ndole', 'eru', 'fufu', 'plantain', 'egusi', 'soup',
-      'palm', 'oil', 'cassava', 'yam', 'cocoyam', 'gari', 'eba', 'pounded',
-      'akara', 'moi', 'moi', 'moi', 'chin', 'chin', 'chin', 'suya', 'kilishi',
-      'puff', 'puff', 'meat', 'pie', 'roti', 'chapati', 'ugali', 'nsima',
-      'sadza', 'banku', 'kenkey', 'waakye', 'jute', 'leaves', 'bitter', 'leaf',
-      'okra', 'soup', 'groundnut', 'soup', 'peanut', 'stew', 'maize', 'corn',
-      'millet', 'sorghum', 'teff', 'injera', 'tibs', 'doro', 'wat', 'lentils',
-      'chickpeas', 'peas', 'beans', 'okra', 'tomatoes', 'peppers', 'onions',
-      'garlic', 'ginger', 'cumin', 'coriander', 'cardamom', 'cloves', 'turmeric',
-      'curry', 'powder', 'berbere', 'mitmita', 'niter', 'kibe', 'goat', 'lamb',
-      'beef', 'chicken', 'fish', 'tilapia', 'catfish', 'shrimp', 'lobster',
-      'coconut', 'mango', 'pineapple', 'banana', 'orange', 'lemon', 'lime',
-      'avocado', 'pawpaw', 'papaya', 'guava', 'passion', 'fruit', 'cashew',
-      'peanut', 'groundnut', 'sesame', 'flaxseed', 'chia', 'quinoa', 'amaranth',
-      'fonio', 'millet', 'sorghum', 'teff', 'wheat', 'barley', 'oats', 'rye',
-      'corn', 'maize', 'cassava', 'yam', 'sweet', 'potato', 'taro', 'cocoyam',
-      'plantain', 'banana', 'breadfruit', 'jackfruit', 'durian', 'rambutan',
-      'lychee', 'longan', 'mangosteen', 'salak', 'snake', 'fruit', 'dragon',
-      'fruit', 'starfruit', 'carambola', 'tamarind', 'baobab', 'hibiscus',
-      'kola', 'nut', 'alligator', 'pepper', 'grains', 'of', 'paradise',
-      'african', 'potash', 'potassium', 'bicarbonate', 'baking', 'soda',
-      'palm', 'wine', 'sorghum', 'beer', 'pito', 'burukutu', 'ogogoro',
-      'akpeteshie', 'local', 'gin', 'kunu', 'zobo', 'sobolo', 'bissap',
-      'ginger', 'beer', 'malt', 'drink', 'fanta', 'coke', 'pepsi', 'sprite',
-      'mineral', 'water', 'pure', 'water', 'bottled', 'water', 'sachet', 'water',
-    ];
-    return foodKeywords.any((keyword) => label.toLowerCase().contains(keyword));
+    final lowerLabel = label.toLowerCase();
+    return _foodKeywords.any((keyword) => lowerLabel.contains(keyword));
   }
 
   Future<void> dispose() async {
@@ -127,3 +124,4 @@ class LocalRecognitionService {
     _textRecognizer.close();
   }
 }
+

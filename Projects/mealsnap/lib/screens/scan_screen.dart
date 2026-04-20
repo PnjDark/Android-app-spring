@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-// import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -24,35 +23,63 @@ class ScanScreen extends StatefulWidget {
   State<ScanScreen> createState() => _ScanScreenState();
 }
 
-class _ScanScreenState extends State<ScanScreen> {
+class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   CameraController? _controller;
   Future<void>? _initializeControllerFuture;
   bool _isFlashOn = false;
   ScanMode _mode = ScanMode.meal;
-  String _scanResult = 'Ready to scan your meal.';
+  String _statusText = 'Tap SCAN to analyze your meal';
   bool _isAnalyzing = false;
+  List<String> _overlayTags = []; // Dynamic tags
+  Map<String, dynamic>? _analysisResult;
+  late AnimationController _pulseController;
   late final LocalRecognitionService _recognitionService;
   late final GeminiService _geminiService;
-  // late final stt.SpeechToText _speech;
-  // bool _isListening = false;
-  // String _voiceTranscript = '';
 
   @override
   void initState() {
     super.initState();
-    // _speech = stt.SpeechToText();
+    _pulseController = AnimationController(
+      duration: const Duration(seconds: 1),
+      vsync: this,
+    )..repeat(reverse: true);
+    
     _recognitionService = LocalRecognitionService();
     _geminiService = GeminiService(geminiApiKey);
     _mode = widget.initialMode;
-    _scanResult = 'Ready to scan ${widget.initialMode.name}';
+    _updateStatusText();
     _initializeCamera();
   }
 
   @override
   void dispose() {
     _controller?.dispose();
+    _pulseController.dispose();
     _recognitionService.dispose();
     super.dispose();
+  }
+
+  void _updateStatusText() {
+    if (_isAnalyzing) {
+      _statusText = 'Analyzing with AI...';
+    } else if (_analysisResult != null) {
+      _statusText = 'Analysis complete! Tap to save.';
+    } else {
+      switch (_mode) {
+        case ScanMode.meal:
+          _statusText = 'Center your meal in frame';
+          break;
+        case ScanMode.ingredients:  
+          _statusText = 'Scan your ingredients';
+          break;
+        case ScanMode.receipt:
+          _statusText = 'Point at receipt total';
+          break;
+        case ScanMode.voice:
+          _statusText = 'Voice mode coming soon';
+          break;
+      }
+    }
   }
 
   Future<void> _initializeCamera() async {
@@ -62,267 +89,146 @@ class _ScanScreenState extends State<ScanScreen> {
         (camera) => camera.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
       );
-      _controller = CameraController(
-        backCamera,
-        ResolutionPreset.high,
-        enableAudio: true,
-      );
+      _controller = CameraController(backCamera, ResolutionPreset.high);
       _initializeControllerFuture = _controller!.initialize();
-      await _initializeControllerFuture;
       setState(() {});
     } catch (e) {
-      setState(() {
-        _scanResult = 'Camera failed to initialize: $e';
-      });
+      _statusText = 'Camera error: $e';
     }
   }
 
   Future<void> _toggleFlash() async {
     if (_controller == null) return;
-    try {
-      _isFlashOn = !_isFlashOn;
-      await _controller!.setFlashMode(
-        _isFlashOn ? FlashMode.torch : FlashMode.off,
-      );
-      setState(() {});
-    } catch (_) {
-      setState(() {
-        _scanResult = 'Unable to toggle flash.';
-      });
-    }
+    _isFlashOn = !_isFlashOn;
+    await _controller!.setFlashMode(_isFlashOn ? FlashMode.torch : FlashMode.off);
+    setState(() {});
   }
 
   Future<void> _capturePhoto() async {
-    if (_controller == null || !_controller!.value.isInitialized) return;
-    if (_mode == ScanMode.voice) {
-      setState(() {
-        _scanResult = 'Voice mode is not supported for photo capture yet.';
-      });
-      return;
-    }
+    if (_controller == null || _isAnalyzing) return;
 
     try {
       setState(() {
         _isAnalyzing = true;
-        _scanResult = 'Capturing image...';
+        _overlayTags.clear();
+        _updateStatusText();
       });
+
       final picture = await _controller!.takePicture();
-      await _processImage(picture.path);
+      
+      // Quick MLKit preview tags
+      final localResult = await _recognitionService.recognizeFoodImage(
+        File(picture.path),
+        ingredientsMode: _mode == ScanMode.ingredients,
+      );
+      final previewTags = List<String>.from(localResult['top_labels'] ?? []);
+      
+      if (mounted) {
+        setState(() {
+          _overlayTags = previewTags;
+        });
+      }
+
+      await _processImage(picture.path, localResult);
     } catch (e) {
-      setState(() {
-        _scanResult = 'Capture failed: $e';
-        _isAnalyzing = false;
-      });
+      if (mounted) {
+        setState(() {
+          _statusText = 'Capture failed: $e';
+          _isAnalyzing = false;
+        });
+      }
     }
   }
 
   Future<void> _pickFromGallery() async {
-    if (_mode == ScanMode.voice) {
-      setState(() {
-        _scanResult = 'Voice mode is not supported for gallery images.';
-      });
-      return;
-    }
-
-    final image = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (_isAnalyzing) return;
+    
+    final picker = ImagePicker();
+    final image = await picker.pickImage(source: ImageSource.gallery);
     if (image == null) return;
+
     setState(() {
       _isAnalyzing = true;
-      _scanResult = 'Scanning gallery image...';
+      _overlayTags.clear();
+      _updateStatusText();
     });
-    await _processImage(image.path);
-  }
 
-  Future<void> _processImage(String path) async {
-    final imageFile = File(path);
-
-    try {
+    final localResult = await _recognitionService.recognizeFoodImage(
+      File(image.path),
+      ingredientsMode: _mode == ScanMode.ingredients,
+    );
+    final previewTags = List<String>.from(localResult['top_labels'] ?? []);
+    
+    if (mounted) {
       setState(() {
-        _isAnalyzing = true;
-        _scanResult = 'Analyzing image...';
-      });
-
-      Map<String, dynamic> parsedAnalysis;
-
-      if (_mode == ScanMode.receipt) {
-        parsedAnalysis = await _recognitionService.recognizeReceiptImage(imageFile);
-      } else {
-        // First, get basic recognition from ML Kit
-        final basicAnalysis = await _recognitionService.recognizeFoodImage(
-          imageFile,
-          ingredientsMode: _mode == ScanMode.ingredients,
-        );
-
-        // Then enhance with Gemini for better analysis
-        setState(() {
-          _scanResult = 'Enhancing analysis with AI...';
-        });
-
-        final modeString = _mode == ScanMode.ingredients ? 'ingredients' : 'meal';
-        final geminiAnalysis = await _geminiService.analyzeMealImage(imageFile, modeString);
-
-        // Combine results
-        parsedAnalysis = _combineAnalyses(basicAnalysis, geminiAnalysis);
-      }
-
-      await _saveToFirestore(path, parsedAnalysis);
-
-      setState(() {
-        _scanResult = _formatAnalysisResult(parsedAnalysis);
-        _isAnalyzing = false;
-      });
-    } catch (e) {
-      setState(() {
-        _scanResult = 'Analysis failed: $e';
-        _isAnalyzing = false;
+        _overlayTags = previewTags;
       });
     }
+
+    await _processImage(image.path, localResult);
+  }
+
+  Future<void> _processImage(String path, Map<String, dynamic> localResult) async {
+    Map<String, dynamic> geminiResult;
+    
+    switch (_mode) {
+      case ScanMode.meal:
+        geminiResult = await _geminiService.analyzeMealImage(File(path));
+        break;
+      case ScanMode.ingredients:
+        geminiResult = await _geminiService.analyzeIngredientsImage(File(path));
+        break;
+      case ScanMode.receipt:
+        final receiptLocal = await _recognitionService.recognizeReceiptImage(File(path));
+        geminiResult = await _geminiService.analyzeReceiptImage(File(path));
+        geminiResult['local_ocr'] = receiptLocal;
+        break;
+      case ScanMode.voice:
+        return; // Not implemented
+    }
+
+    final combined = {
+      ...localResult,
+      'gemini': geminiResult,
+      'mode': _mode.name,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+
+    if (mounted) {
+      setState(() {
+        _analysisResult = combined;
+        _overlayTags = List<String>.from(geminiResult['main_ingredients'] ?? localResult['top_labels'] ?? []);
+        _isAnalyzing = false;
+        _updateStatusText();
+      });
+      
+      await _saveToFirestore(path, combined);
+    }
+  }
+
+  Future<void> _clearResults() {
+    setState(() {
+      _analysisResult = null;
+      _overlayTags.clear();
+      _updateStatusText();
+    });
   }
 
   Future<void> _saveToFirestore(String imagePath, Map<String, dynamic> analysis) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final mealEntry = MealEntry(
-      id: '', // Firestore will generate
-      userId: user.uid,
-      type: _mode.name,
-      description: _formatAnalysisResult(analysis),
-      analysis: analysis,
-      timestamp: DateTime.now(),
-      // TODO: Upload image to Firebase Storage and get URL
-    );
+    // TODO: Upload image to Storage
+    final mealEntry = {
+      'userId': user.uid,
+      'type': _mode.name,
+      'imagePath': imagePath,
+      'analysis': analysis,
+      'timestamp': FieldValue.serverTimestamp(),
+      'source': 'camera',
+    };
 
-    await FirebaseFirestore.instance.collection('meals').add(mealEntry.toFirestore());
-  }
-
-  Map<String, dynamic> _combineAnalyses(Map<String, dynamic> basic, String gemini) {
-    // Try to parse Gemini response as JSON
-    try {
-      // Clean the response (remove markdown formatting)
-      String cleanResponse = gemini
-          .replaceAll('```json', '')
-          .replaceAll('```', '')
-          .replaceAll('```\n', '')
-          .trim();
-
-      // Find JSON content
-      final jsonStart = cleanResponse.indexOf('{');
-      final jsonEnd = cleanResponse.lastIndexOf('}');
-      if (jsonStart != -1 && jsonEnd != -1) {
-        cleanResponse = cleanResponse.substring(jsonStart, jsonEnd + 1);
-      }
-
-      final geminiData = jsonDecode(cleanResponse);
-
-      // Combine the analyses
-      return {
-        ...basic,
-        'gemini_analysis': geminiData,
-        'enhanced': true,
-      };
-    } catch (e) {
-      // If JSON parsing fails, return basic analysis with raw Gemini response
-      return {
-        ...basic,
-        'gemini_raw': gemini,
-        'enhanced': false,
-      };
-    }
-  }
-
-  // Future<void> _analyzeVoiceInput(String transcript) async {
-  //   setState(() {
-  //     _isAnalyzing = true;
-  //     _scanResult = 'Analyzing voice input...';
-  //   });
-
-  //   try {
-  //     final analysis = await _geminiService.analyzeText(transcript, _mode.name);
-
-  //     Map<String, dynamic> parsedAnalysis;
-  //     try {
-  //       String cleanAnalysis = analysis.replaceAll('```json', '').replaceAll('```', '').trim();
-  //       parsedAnalysis = jsonDecode(cleanAnalysis);
-  //     } catch (e) {
-  //       parsedAnalysis = {'raw_response': analysis};
-  //     }
-
-  //     await _saveVoiceToFirestore(transcript, parsedAnalysis);
-
-  //     setState(() {
-  //       _scanResult = _formatAnalysisResult(parsedAnalysis);
-  //       _isAnalyzing = false;
-  //     });
-  //   } catch (e) {
-  //     setState(() {
-  //       _scanResult = 'Voice analysis failed: $e';
-  //       _isAnalyzing = false;
-  //     });
-  //   }
-  // }
-
-  // Future<void> _saveVoiceToFirestore(String transcript, Map<String, dynamic> analysis) async {
-  //   final user = FirebaseAuth.instance.currentUser;
-  //   if (user == null) return;
-
-  //   final mealEntry = MealEntry(
-  //     id: '',
-  //     userId: user.uid,
-  //     type: '${_mode.name}_voice',
-  //     description: transcript,
-  //     analysis: analysis,
-  //     timestamp: DateTime.now(),
-  //   );
-
-  //   await FirebaseFirestore.instance.collection('meals').add(mealEntry.toFirestore());
-  // }
-
-  // Future<void> _toggleVoiceRecording() async {
-  //   if (!_isListening) {
-  //     final available = await _speech.initialize(
-  //       onStatus: (status) {},
-  //       onError: (errorNotification) {},
-  //     );
-  //     if (!available) {
-  //       setState(() {
-  //         _scanResult = 'Voice recognition unavailable.';
-  //       });
-  //       return;
-  //     }
-  //     setState(() {
-  //       _isListening = true;
-  //       _voiceTranscript = '';
-  //       _scanResult = 'Listening for voice input...';
-  //     });
-  //     _speech.listen(onResult: _onSpeechResult);
-  //   } else {
-  //     _speech.stop();
-  //     setState(() {
-  //       _isListening = false;
-  //     });
-  //     if (_voiceTranscript.isNotEmpty) {
-  //       await _analyzeVoiceInput(_voiceTranscript);
-  //     } else {
-  //       setState(() {
-  //         _scanResult = 'No voice input captured.';
-  //       });
-  //     }
-  //   }
-  // }
-
-  // void _onSpeechResult(dynamic result) {
-  //   setState(() {
-  //     _voiceTranscript = result.recognizedWords ?? '';
-  //     _scanResult = 'Voice input: $_voiceTranscript';
-  //   });
-  // }
-
-  void _setMode(ScanMode mode) {
-    setState(() {
-      _mode = mode;
-      _scanResult = 'Ready to scan ${_mode.name}';
-    });
+    await FirebaseFirestore.instance.collection('meals').add(mealEntry);
   }
 
   @override
@@ -332,6 +238,7 @@ class _ScanScreenState extends State<ScanScreen> {
       body: SafeArea(
         child: Stack(
           children: [
+            // Camera Preview
             if (_initializeControllerFuture != null)
               FutureBuilder<void>(
                 future: _initializeControllerFuture,
@@ -339,22 +246,24 @@ class _ScanScreenState extends State<ScanScreen> {
                   if (snapshot.connectionState == ConnectionState.done) {
                     return CameraPreview(_controller!);
                   }
-                  return const Center(child: CircularProgressIndicator());
+                  return const ColoredBox(color: Colors.black);
                 },
-              )
-            else
-              const Center(child: CircularProgressIndicator()),
+              ),
+
+            // Gradient overlay
             Positioned.fill(
               child: Container(
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [Colors.black.withValues(alpha: 0.25), Colors.transparent],
+                    colors: [Colors.transparent, Colors.black54],
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                   ),
                 ),
               ),
             ),
+
+            // Top controls
             Positioned(
               top: 16,
               left: 16,
@@ -362,19 +271,19 @@ class _ScanScreenState extends State<ScanScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _buildCircleButton(
-                    icon: Icons.close,
-                    onPressed: () => Navigator.of(context).pop(),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                    onPressed: () => Navigator.pop(context),
                   ),
                   Row(
                     children: [
-                      _buildCircleButton(
-                        icon: _isFlashOn ? Icons.flash_on : Icons.flash_off,
+                      IconButton(
+                        icon: Icon(_isFlashOn ? Icons.flash_on : Icons.flash_off, 
+                                  color: Colors.white),
                         onPressed: _toggleFlash,
                       ),
-                      const SizedBox(width: 12),
-                      _buildCircleButton(
-                        icon: Icons.settings,
+                      IconButton(
+                        icon: const Icon(Icons.info_outline, color: Colors.white),
                         onPressed: () {},
                       ),
                     ],
@@ -382,145 +291,225 @@ class _ScanScreenState extends State<ScanScreen> {
                 ],
               ),
             ),
+
+            // Scan frame + dynamic tags
             Center(
-              child: Container(
-                width: 280,
-                height: 280,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(32),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 2),
-                ),
-                child: Stack(
-                  children: [
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      child: Container(
-                        height: 2,
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [Colors.transparent, Color(0xFFA3F69C), Colors.transparent],
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 16,
-                      left: 16,
-                      child: _buildTag('Tomato'),
-                    ),
-                    Positioned(
-                      bottom: 60,
-                      right: 24,
-                      child: _buildTag('Onion'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Positioned(
-              bottom: 180,
-              left: 0,
-              right: 0,
-              child: IgnorePointer(
-                ignoring: true,
-                child: Center(
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 24),
-                    padding: const EdgeInsets.all(16),
+              child: Stack(
+                children: [
+                  // Frame
+                  Container(
+                    width: 300,
+                    height: 300,
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.12),
+                      border: Border.all(color: Colors.greenAccent, width: 2),
                       borderRadius: BorderRadius.circular(24),
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Scanning for ingredients...',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
+                  ),
+                  
+                  // Dynamic overlay tags
+                  if (_overlayTags.isNotEmpty)
+                    Positioned(
+                      top: 20,
+                      left: 20,
+                      right: 20,
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: _overlayTags.take(6).map((tag) => 
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.9),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(tag, style: const TextStyle(
+                              color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold,
+                            )),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _scanResult,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
+                        ).toList(),
+                      ),
                     ),
+                ],
+              ),
+            ),
+
+            // Status panel
+            Positioned(
+              bottom: 220,
+              left: 24,
+              right: 24,
+              child: Material(
+                color: Colors.black87,
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Status/Progress
+                      if (_isAnalyzing)
+                        Column(
+                          children: [
+                            SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                color: Colors.greenAccent,
+                                strokeWidth: 3,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                        ),
+                      
+                      Text(
+                        _statusText,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      
+                      if (_analysisResult != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: ElevatedButton.icon(
+                            onPressed: _clearResults,
+                            icon: const Icon(Icons.check, size: 18),
+                            label: const Text('Save & New Scan'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
             ),
+
+            // Bottom controls
             Positioned(
               left: 0,
               right: 0,
               bottom: 0,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: ScanMode.values.map((mode) {
-                        return _buildModeButton(mode);
-                      }).toList(),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+                decoration: const BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Mode selector
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: ScanMode.values.map((mode) {
+                          final isActive = _mode == mode;
+                          return GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _mode = mode;
+                                _updateStatusText();
+                              });
+                            },
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 4),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: isActive ? Colors.green : Colors.white24,
+                                borderRadius: BorderRadius.circular(25),
+                                border: Border.all(
+                                  color: isActive ? Colors.greenAccent : Colors.white38,
+                                  width: 1.5,
+                                ),
+                              ),
+                              child: Text(
+                                mode.name.toUpperCase(),
+                                style: TextStyle(
+                                  color: isActive ? Colors.white : Colors.white70,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
                     ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.4),
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    
+                    const SizedBox(height: 20),
+                    
+                    // Action buttons
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        _buildBottomControl(
-                          icon: Icons.photo_library,
-                          label: 'Gallery',
-                          onPressed: _pickFromGallery,
+                        // Gallery
+                        GestureDetector(
+                          onTap: _isAnalyzing ? null : _pickFromGallery,
+                          child: Column(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.white24,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: const Icon(Icons.photo_library, color: Colors.white, size: 28),
+                              ),
+                              const SizedBox(height: 8),
+                              const Text('Gallery', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                            ],
+                          ),
                         ),
+                        
+                        // Shutter (main button)
                         GestureDetector(
                           onTap: _isAnalyzing ? null : _capturePhoto,
                           child: Container(
-                            width: 88,
-                            height: 88,
+                            width: 80,
+                            height: 80,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFFFC820C), Color(0xFF0D631B)],
+                              gradient: LinearGradient(
+                                colors: _isAnalyzing 
+                                  ? [Colors.grey]
+                                  : [Colors.orange, Colors.green],
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.3),
-                                  blurRadius: 16,
-                                  offset: const Offset(0, 8),
+                                  color: (_isAnalyzing ? Colors.grey : Colors.white)
+                                      .withOpacity(0.3),
+                                  blurRadius: 20,
+                                  spreadRadius: 2,
                                 ),
                               ],
                             ),
-                            child: Center(
-                              child: Icon(
-                                _isAnalyzing ? Icons.hourglass_top : Icons.camera_alt,
-                                color: Colors.white,
-                                size: 32,
-                              ),
-                            ),
+                            child: _isAnalyzing
+                              ? const SizedBox(
+                                  width: 32,
+                                  height: 32,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 3,
+                                  ),
+                                )
+                              : const Icon(Icons.circle, color: Colors.white, size: 48),
                           ),
                         ),
+                        
+                        // Spacer (for symmetry)
+                        const SizedBox(width: 80),
                       ],
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
@@ -528,133 +517,5 @@ class _ScanScreenState extends State<ScanScreen> {
       ),
     );
   }
-
-  Widget _buildCircleButton({required IconData icon, required VoidCallback onPressed}) {
-    return Material(
-      color: Colors.black.withValues(alpha: 0.4),
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onPressed,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Icon(icon, color: Colors.white, size: 20),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTag(String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0D631B).withValues(alpha: 0.8),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700),
-      ),
-    );
-  }
-
-  Widget _buildModeButton(ScanMode mode) {
-    final isSelected = _mode == mode;
-    final label = mode.name.replaceFirst(mode.name[0], mode.name[0].toUpperCase());
-    return GestureDetector(
-      onTap: () => _setMode(mode),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.white.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: isSelected ? const Color(0xFFA3F69C) : Colors.white.withValues(alpha: 0.12),
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.white70,
-            fontWeight: FontWeight.bold,
-            fontSize: 12,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBottomControl({required IconData icon, required String label, required VoidCallback onPressed}) {
-    return InkWell(
-      onTap: onPressed,
-      child: Column(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(icon, color: Colors.white, size: 24),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatAnalysisResult(Map<String, dynamic> analysis) {
-    if (analysis.containsKey('gemini_analysis')) {
-      final geminiData = analysis['gemini_analysis'] as Map<String, dynamic>;
-
-      if (geminiData.containsKey('estimated_calories')) {
-        final calories = geminiData['estimated_calories'];
-        final ingredients = (geminiData['main_ingredients'] as List<dynamic>?)?.join(', ') ?? 'N/A';
-        final protein = geminiData['protein_g'] ?? 'N/A';
-        final carbs = geminiData['carbs_g'] ?? 'N/A';
-        final fat = geminiData['fat_g'] ?? 'N/A';
-
-        return '🍽️ Enhanced Analysis:\n'
-               'Calories: $calories kcal\n'
-               'Ingredients: $ingredients\n'
-               'Protein: ${protein}g, Carbs: ${carbs}g, Fat: ${fat}g';
-      } else if (geminiData.containsKey('ingredients')) {
-        final ingredients = (geminiData['ingredients'] as List<dynamic>?)?.join(', ') ?? 'N/A';
-        return '🥬 Detected Ingredients:\n$ingredients';
-      }
-    }
-
-    // Fallback to basic analysis
-    if (analysis.containsKey('labels')) {
-      final labels = (analysis['labels'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [];
-      if (labels.isEmpty) {
-        return 'No food labels were detected. Try a clearer photo of your meal.';
-      }
-
-      final detected = labels.map((item) => item['label']).join(', ');
-      final confidence = labels
-          .map((item) {
-            final score = (item['confidence'] as num?)?.toDouble() ?? 0.0;
-            return '${item['label']}: ${(score * 100).toStringAsFixed(0)}%';
-          })
-          .join(', ');
-
-      return 'Detected: $detected\nConfidence: $confidence';
-    } else if (analysis.containsKey('items')) {
-      final items = analysis['items'] as List<dynamic>? ?? [];
-      final total = analysis['total'] ?? 'N/A';
-      return 'Receipt Items:\n${items.map((item) => '- ${item['name']}: \$${item['price']}').join('\n')}\nTotal: \$$total';
-    } else if (analysis.containsKey('raw_response')) {
-      return analysis['raw_response'];
-    } else if (analysis.containsKey('gemini_raw')) {
-      return 'AI Analysis: ${analysis['gemini_raw']}';
-    } else {
-      return 'Analysis complete. Data saved.';
-    }
-  }
 }
+
