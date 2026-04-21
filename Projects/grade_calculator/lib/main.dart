@@ -127,19 +127,17 @@ class _GradeScreenState extends State<GradeScreen> {
       allowedExtensions: ['csv'],
     );
 
-    if (outputPath != null) {
-      try {
-        await FileWriter.toCsv(outputPath, students, assignments, _calculator);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Exported to $outputPath')),
-        );
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to export: $e')),
-        );
-      }
+    try {
+      await FileWriter.toCsv(outputPath, students, assignments, _calculator);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Exported to $outputPath')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to export: $e')),
+      );
     }
-  }
+    }
 
   void _saveGrade(String assignmentId, double score) {
     setState(() {
