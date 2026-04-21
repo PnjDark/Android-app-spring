@@ -11,8 +11,11 @@ import 'screens/meal_suggestions_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/scan_screen.dart';
 import 'services/auth_service.dart';
+import 'firebase_config.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await FirebaseConfig.init();
   runApp(const MealSnapApp());
 }
 
@@ -102,6 +105,19 @@ class AuthGate extends StatelessWidget {
     return StreamBuilder<User?>(
       stream: AuthService.authStateChanges(),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Scaffold(
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'App error: \${snapshot.error}\nCheck Firebase setup.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          );
+        }
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
