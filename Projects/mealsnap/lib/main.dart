@@ -24,7 +24,7 @@ class MealSnapApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp.router(
+    return MaterialApp(
       title: 'MealSnap+',
       theme: ThemeData(
         useMaterial3: true,
@@ -593,6 +593,67 @@ class HomeContent extends StatelessWidget {
     );
   }
 
+  static Widget _buildRecentActivityItem(String title, String time, String calories, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF111D23).withOpacity(0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE9F6FD),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: const Color(0xFF005A8C)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF111D23),
+                  ),
+                ),
+                Text(
+                  time,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF707A6C),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            calories,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF964900),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   static Widget _buildMacroItem(String label, String value, String percentage, Color color) {
     return Row(
       children: [
@@ -633,32 +694,55 @@ class HomeContent extends StatelessWidget {
     );
   }
 
-  static Widget _buildActionButton(String title, String subtitle, IconData icon, Color color, VoidCallback? onTap) {
+  Widget _buildActionButton(String title, String subtitle, IconData icon, Color color, VoidCallback? onTap) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.8),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+          gradient: LinearGradient(
+            colors: [color.withOpacity(0.1), color.withOpacity(0.05)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.3)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 20,
-              offset: const Offset(0, -8),
+              color: color.withOpacity(0.1),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
-        child: ClipRRect(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-          child: NavigationBar(
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            indicatorColor: AppTheme.primary.withOpacity(0.1),
-            selectedIndex: _calculateSelectedIndex(location),
-            onDestinationSelected: (index) => _onItemTapped(index, context),
-            destinations: const [
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 32, color: color),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF111D23),
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 12,
+                color: Color(0xFF707A6C),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
               NavigationDestination(
                 icon: Icon(Symbols.home),
 Icon(Icons.home, fill: true),
@@ -691,33 +775,5 @@ Icon(Icons.home, fill: true),
     );
   }
 
-  static int _calculateSelectedIndex(String location) {
-    if (location == '/') return 0;
-    if (location == '/suggestions') return 1;
-    // index 2 is Scan (push)
-    if (location == '/analytics') return 3;
-    if (location == '/profile') return 4;
-    return 0;
-  }
 
-  void _onItemTapped(int index, BuildContext context) {
-    switch (index) {
-      case 0:
-        context.go('/');
-        break;
-      case 1:
-        context.go('/suggestions');
-        break;
-      case 2:
-        context.push('/scan');
-        break;
-      case 3:
-        context.go('/analytics');
-        break;
-      case 4:
-        context.go('/profile');
-        break;
-    }
-  }
-}
 
