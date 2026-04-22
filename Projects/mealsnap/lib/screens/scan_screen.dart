@@ -19,7 +19,17 @@ enum ScanMode { meal, ingredients, receipt, voice }
 
 class ScanScreen extends StatefulWidget {
   final ScanMode initialMode;
-  const ScanScreen({super.key, this.initialMode = ScanMode.meal});
+  final List<CameraDescription>? cameras;
+  final LocalRecognitionService? localRecognitionService;
+  final GeminiService? geminiService;
+
+  const ScanScreen({
+    super.key,
+    this.initialMode = ScanMode.meal,
+    this.cameras,
+    this.localRecognitionService,
+    this.geminiService,
+  });
 
   @override
   State<ScanScreen> createState() => _ScanScreenState();
@@ -57,8 +67,8 @@ class _ScanScreenState extends State<ScanScreen>
     _mode = widget.initialMode;
     _statusText = _idleStatus(_mode);
 
-    _localService = LocalRecognitionService();
-    _geminiService = GeminiService(geminiApiKey);
+    _localService = widget.localRecognitionService ?? LocalRecognitionService();
+    _geminiService = widget.geminiService ?? GeminiService(geminiApiKey);
 
     _scanLineAnim = AnimationController(
       vsync: this,
@@ -83,7 +93,7 @@ class _ScanScreenState extends State<ScanScreen>
 
   Future<void> _initCamera() async {
     try {
-      final cameras = await availableCameras();
+      final cameras = widget.cameras ?? await availableCameras();
       final back = cameras.firstWhere(
         (c) => c.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
@@ -896,8 +906,7 @@ class _BottomControl extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(label,
-              style:
-                  const TextStyle(color: Colors.white60, fontSize: 11)),
+              style: const TextStyle(color: Colors.white60, fontSize: 11)),
         ],
       ),
     );

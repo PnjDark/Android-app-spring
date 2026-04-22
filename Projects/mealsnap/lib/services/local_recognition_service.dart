@@ -1,9 +1,12 @@
 import 'dart:io';
+import 'dart:typed_data';
 
-import 'package:google_mlkit_image_labeling/google_mlkit_image_labeling.dart';
+import 'package:flutter/services.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:image/image.dart' as img;
+import 'package:tflite_flutter/tflite_flutter.dart';
 
-/// Raw result from ML Kit -- used as a fast pre-pass before Gemini.
+/// Raw result from the local model -- used as a fast pre-pass before Gemini.
 class LocalLabelResult {
   final List<Map<String, dynamic>> foodLabels;
   final List<Map<String, dynamic>> allLabels;
@@ -15,48 +18,92 @@ class LocalLabelResult {
 }
 
 class LocalRecognitionService {
-  late final ImageLabeler _imageLabeler;
+  Interpreter? _interpreter;
+  List<String>? _labels;
   late final TextRecognizer _textRecognizer;
 
-  LocalRecognitionService({double confidenceThreshold = 0.45})
-      : _imageLabeler = ImageLabeler(
-          options: ImageLabelerOptions(
-            confidenceThreshold: confidenceThreshold,
-          ),
-        ),
-        _textRecognizer = TextRecognizer(
-          script: TextRecognitionScript.latin,
-        );
-
-  // -- Public API --------------------------------------------------------------
-
-  /// Returns ML Kit labels for a food/ingredients photo.
-  /// The result is used by ScanScreen to build the initial overlay tags
-  /// while Gemini is still running in the background.
-  Future<LocalLabelResult> recognizeFoodImage(File imageFile) async {
-    final input = InputImage.fromFilePath(imageFile.path);
-    final labels = await _imageLabeler.processImage(input);
-
-    final all = labels
-        .map((l) => <String, dynamic>{
-              'label': l.label,
-              'confidence': l.confidence,
-            })
-        .toList();
-
-    final food = all
-        .where((item) => _isFoodRelated(item['label'] as String))
-        .toList()
-      ..sort((a, b) =>
-          (b['confidence'] as double).compareTo(a['confidence'] as double));
-
-    // If food filter is too aggressive, fall back to top-5 overall labels.
-    final chosen = food.isNotEmpty ? food : all.take(5).toList();
-
-    return LocalLabelResult(foodLabels: chosen, allLabels: all);
+  LocalRecognitionService() {
+    _loadModel();
+    _textRecognizer = TextRecognizer(
+      script: TextRecognitionScript.latin,
+    );
   }
 
-  /// OCR a receipt image; returns raw text lines for Gemini to parse.
+  LocalRecognitionService.test(this._interpreter) {
+    _loadLabels();
+    _textRecognizer = TextRecognizer(
+      script: TextRecognitionScript.latin,
+    );
+  }
+
+  Future<void> _loadModel() async {
+    try {
+      _loadLabels();
+      _interpreter = await Interpreter.fromAsset('assets/ai/food_classifier.tflite');
+    } catch (e) {
+      print("Error loading model: $e");
+    }
+  }
+
+  Future<void> _loadLabels() async {
+      final labelsData = await rootBundle.loadString('assets/ai/food_labels.txt');
+      _labels = labelsData.split('\n');
+  }
+
+  Future<LocalLabelResult> recognizeFoodImage(File imageFile) async {
+    if (_interpreter == null || _labels == null) {
+      return const LocalLabelResult(foodLabels: [], allLabels: []);
+    }
+
+    final imageBytes = await imageFile.readAsBytes();
+    final originalImage = img.decodeImage(imageBytes);
+    if (originalImage == null) {
+      return const LocalLabelResult(foodLabels: [], allLabels: []);
+    }
+
+    // Resize the image to the model's input size
+    final inputImage = img.copyResize(originalImage, width: 224, height: 224);
+
+    // Convert the image to a byte buffer
+    final input = _imageToByteList(inputImage);
+
+    // Define the output
+    var output = List.filled(1 * _labels!.length, 0.0).reshape([1, _labels!.length]);
+
+    // Run inference
+    _interpreter!.run(input, output);
+
+    // Process the output
+    final results = output[0] as List<double>;
+    final List<Map<String, dynamic>> all = [];
+    for (var i = 0; i < results.length; i++) {
+      if (results[i] > 0.1) { // Confidence threshold
+        all.add({
+          'label': _labels![i],
+          'confidence': results[i],
+        });
+      }
+    }
+
+    all.sort((a, b) => (b['confidence'] as double).compareTo(a['confidence'] as double));
+
+    return LocalLabelResult(foodLabels: all.take(5).toList(), allLabels: all);
+  }
+
+  ByteBuffer _imageToByteList(img.Image image) {
+    var buffer = ByteData(1 * 224 * 224 * 3);
+    var bufferIndex = 0;
+    for (var y = 0; y < 224; y++) {
+      for (var x = 0; x < 224; x++) {
+        var pixel = image.getPixel(x, y);
+        buffer.setUint8(bufferIndex++, pixel.r.toInt());
+        buffer.setUint8(bufferIndex++, pixel.g.toInt());
+        buffer.setUint8(bufferIndex++, pixel.b.toInt());
+      }
+    }
+    return buffer.buffer;
+  }
+
   Future<String> recognizeReceiptText(File imageFile) async {
     final input = InputImage.fromFilePath(imageFile.path);
     final result = await _textRecognizer.processImage(input);
@@ -64,61 +111,7 @@ class LocalRecognitionService {
   }
 
   Future<void> dispose() async {
-    _imageLabeler.close();
+    _interpreter?.close();
     _textRecognizer.close();
-  }
-
-  // -- Food label classifier ----------------------------------------------------
-  //
-  // ML Kit labels are broad (e.g. "Food", "Ingredient", "Dish", "Fruit").
-  // We cast a wide net so we don't accidentally hide valid food labels.
-  // Gemini does the precise identification -- this is just a coarse filter.
-
-  static const _foodCategories = <String>{
-    // ML Kit top-level categories
-    'food', 'dish', 'meal', 'cuisine', 'ingredient', 'recipe',
-    'drink', 'beverage', 'snack', 'dessert', 'produce',
-
-    // Cooking & serving
-    'plate', 'bowl', 'cup', 'glass', 'pot', 'pan', 'grill',
-    'roast', 'fried', 'baked', 'steamed', 'boiled', 'raw',
-
-    // Protein
-    'meat', 'chicken', 'beef', 'pork', 'lamb', 'goat', 'fish',
-    'seafood', 'shrimp', 'prawn', 'crab', 'lobster', 'egg',
-    'tofu', 'legume', 'bean', 'lentil', 'pea',
-
-    // Grains & starch
-    'rice', 'pasta', 'bread', 'noodle', 'flour', 'wheat',
-    'corn', 'maize', 'oat', 'barley', 'cassava', 'yam',
-    'potato', 'plantain', 'fufu', 'ugali',
-
-    // Vegetables
-    'vegetable', 'salad', 'tomato', 'onion', 'pepper', 'garlic',
-    'carrot', 'lettuce', 'spinach', 'kale', 'okra', 'mushroom',
-    'eggplant', 'zucchini', 'broccoli', 'cabbage', 'celery',
-
-    // Fruit
-    'fruit', 'apple', 'banana', 'mango', 'orange', 'lemon',
-    'lime', 'pineapple', 'avocado', 'coconut', 'papaya', 'guava',
-    'watermelon', 'grape', 'strawberry', 'berry',
-
-    // Dairy & fat
-    'cheese', 'milk', 'cream', 'butter', 'yogurt', 'dairy',
-    'oil', 'sauce', 'gravy', 'soup', 'stew', 'curry', 'broth',
-
-    // Baked / sweet
-    'cake', 'cookie', 'pastry', 'donut', 'waffle', 'pancake',
-    'chocolate', 'candy', 'sugar', 'honey', 'jam',
-
-    // African / regional
-    'jollof', 'ndole', 'egusi', 'eru', 'suya', 'kilishi',
-    'puff', 'akara', 'moi', 'chin', 'waakye', 'banku', 'kenkey',
-    'injera', 'tibs', 'doro', 'berbere', 'baobab',
-  };
-
-  bool _isFoodRelated(String label) {
-    final lower = label.toLowerCase();
-    return _foodCategories.any((kw) => lower.contains(kw));
   }
 }

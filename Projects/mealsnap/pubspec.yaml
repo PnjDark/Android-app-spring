@@ -51,11 +51,11 @@ dependencies:
   # Camera & Image Picker
   image_picker: ^1.0.4
   camera: ^0.10.5+2
-  
-  # ML Kit for OCR
+  image: ^4.0.17 # Added for image processing
+
+  # ML Packages
   google_mlkit_text_recognition: ^0.15.1
-  google_mlkit_image_labeling: ^0.14.2
-  google_mlkit_commons: ^0.11.1
+  tflite_flutter: ^0.12.0 # Added for local inference
 
   # Gemini AI
   google_generative_ai: ^0.4.3
@@ -71,6 +71,8 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  mockito: ^5.4.4
+  build_runner: ^2.4.9
 
 dependency_overrides:
   google_mlkit_commons: ^0.11.1
@@ -94,9 +96,9 @@ flutter:
   uses-material-design: true
 
   # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+  assets:
+    - assets/ai/food_classifier.tflite
+    - assets/ai/food_labels.txt
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
@@ -123,4 +125,3 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
-

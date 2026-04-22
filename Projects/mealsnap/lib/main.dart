@@ -32,7 +32,7 @@ class MealSnapApp extends StatelessWidget {
       title: 'MealSnap+',
       debugShowCheckedModeBanner: false,
       theme: _buildTheme(),
-      home: const AuthGate(),
+      home: const ScanScreen(), // Directly launch ScanScreen
     );
   }
 
@@ -202,12 +202,12 @@ class _BottomNav extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.95),
+        color: Colors.white.withAlpha(242),
         borderRadius:
             const BorderRadius.vertical(top: Radius.circular(24)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.07),
+            color: Colors.black.withAlpha(18),
             blurRadius: 24,
             offset: const Offset(0, -6),
           ),
@@ -227,53 +227,31 @@ class _BottomNav extends StatelessWidget {
           selectedLabelStyle: GoogleFonts.inter(
               fontWeight: FontWeight.w700, fontSize: 11),
           unselectedLabelStyle: GoogleFonts.inter(fontSize: 11),
-          items: [
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.home_outlined),
-              activeIcon: Icon(Icons.home),
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Symbols.home, grade: 400, opticalSize: 22),
+              activeIcon: Icon(Symbols.home, grade: 700, opticalSize: 22, fill: 1),
               label: 'Home',
             ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.bar_chart_outlined),
-              activeIcon: Icon(Icons.bar_chart),
+            BottomNavigationBarItem(
+              icon: Icon(Symbols.bar_chart, grade: 400, opticalSize: 22),
+              activeIcon: Icon(Symbols.bar_chart, grade: 700, opticalSize: 22, fill: 1),
               label: 'Analytics',
             ),
             // Scan -- centre button with accent style
             BottomNavigationBarItem(
-              icon: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFF0D631B), Color(0xFF2E7D32)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.camera_alt,
-                    color: Colors.white, size: 22),
-              ),
-              activeIcon: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFF0D631B), Color(0xFF2E7D32)],
-                  ),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.camera_alt,
-                    color: Colors.white, size: 22),
-              ),
+              icon: _ScanNavIcon(),
+              activeIcon: _ScanNavIcon(active: true),
               label: 'Scan',
             ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.lightbulb_outline),
-              activeIcon: Icon(Icons.lightbulb),
+            BottomNavigationBarItem(
+              icon: Icon(Symbols.lightbulb, grade: 400, opticalSize: 22),
+              activeIcon: Icon(Symbols.lightbulb, grade: 700, opticalSize: 22, fill: 1),
               label: 'Suggest',
             ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline),
-              activeIcon: Icon(Icons.person),
+            BottomNavigationBarItem(
+              icon: Icon(Symbols.person, grade: 400, opticalSize: 22),
+              activeIcon: Icon(Symbols.person, grade: 700, opticalSize: 22, fill: 1),
               label: 'Profile',
             ),
           ],
@@ -282,6 +260,27 @@ class _BottomNav extends StatelessWidget {
     );
   }
 }
+
+class _ScanNavIcon extends StatelessWidget {
+  final bool active;
+  const _ScanNavIcon({this.active = false});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF0D631B), Color(0xFF2E7D32)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        shape: BoxShape.circle,
+      ),
+      child: const Icon(Symbols.camera_alt, color: Colors.white, size: 22),
+    );
+  }
+}
+
 
 // -----------------------------------------------------------------------------
 // Home content (the actual home tab body)
@@ -314,7 +313,7 @@ class HomeContent extends StatelessWidget {
         // -- App bar ----------------------------------------------------------
         SliverAppBar(
           pinned: true,
-          backgroundColor: Colors.white.withValues(alpha: 0.95),
+          backgroundColor: Colors.white.withAlpha(242),
           elevation: 0,
           title: Row(children: [
             Container(
@@ -362,7 +361,7 @@ class HomeContent extends StatelessWidget {
                 const SizedBox(height: 16),
                 // Greeting
                 Text(
-                  '${_greeting()}, ${_greetingName()}! ',
+                  '\${_greeting()}, \${_greetingName()}! ',
                   style: const TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w700,
@@ -448,7 +447,7 @@ class HomeContent extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: Colors.black.withAlpha(10),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -458,7 +457,7 @@ class HomeContent extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: const Color(0xFF0D631B).withValues(alpha: 0.1),
+            color: const Color(0xFF0D631B).withAlpha(26),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(icon, color: const Color(0xFF0D631B), size: 22),
@@ -501,7 +500,7 @@ class _NutritionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
+            color: Colors.black.withAlpha(15),
             blurRadius: 24,
             offset: const Offset(0, 8),
           ),
@@ -516,7 +515,7 @@ class _NutritionCard extends StatelessWidget {
             padding:
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
             decoration: BoxDecoration(
-              color: const Color(0xFFA3F69C).withValues(alpha: 0.25),
+              color: const Color(0xFFA3F69C).withAlpha(64),
               borderRadius: BorderRadius.circular(20),
             ),
             child: const Text('On Track',
@@ -677,7 +676,7 @@ class _ScanBtn extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: color.withValues(alpha: 0.1),
+              color: color.withAlpha(26),
               blurRadius: 16,
               offset: const Offset(0, 4),
             ),
@@ -687,7 +686,7 @@ class _ScanBtn extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
+              color: color.withAlpha(26),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(icon, color: color, size: 20),
@@ -724,7 +723,7 @@ class _SuggestedMealCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
+            color: Colors.black.withAlpha(15),
             blurRadius: 20,
             offset: const Offset(0, 8),
           ),

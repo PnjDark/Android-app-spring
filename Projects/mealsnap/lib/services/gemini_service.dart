@@ -236,7 +236,7 @@ class GeminiService {
   Future<MealAnalysisResult> _runMealRequest(
       List<Content> contents) async {
     final raw = await _generate(contents);
-    return _parseMealResult(raw);
+    return parseMealResult(raw);
   }
 
   Future<ReceiptAnalysisResult> _runReceiptRequest(
@@ -256,7 +256,7 @@ class GeminiService {
 
   // -- Parsers -----------------------------------------------------------------
 
-  MealAnalysisResult _parseMealResult(String raw) {
+  MealAnalysisResult parseMealResult(String raw) {
     try {
       final json = _extractJson(raw);
       final ingredients = (json['ingredients'] as List<dynamic>? ?? [])
