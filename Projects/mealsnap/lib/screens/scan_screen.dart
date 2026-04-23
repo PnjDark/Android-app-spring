@@ -124,7 +124,9 @@ class _ScanScreenState extends State<ScanScreen>
   Future<void> _capturePhoto() async {
     if (_cameraController == null ||
         !_cameraController!.value.isInitialized ||
-        _isAnalyzing) return;
+        _isAnalyzing) {
+      return;
+    }
     if (_mode == ScanMode.voice) {
       _showVoiceUnsupported();
       return;
@@ -333,7 +335,7 @@ class _ScanScreenState extends State<ScanScreen>
 
     return '${r.mealName}  $confidenceEmoji ${r.confidence} confidence\n'
         '${r.mealCategory.toUpperCase()}  -  ${r.portionSize}\n'
-        '${healthEmoji} ${r.healthRating.toUpperCase()}'
+        '$healthEmoji ${r.healthRating.toUpperCase()}'
         '${tags.isNotEmpty ? '  -  $tags' : ''}\n\n'
         ' ${n.totalCalories.round()} kcal\n'
         ' Protein ${n.proteinG.round()} g  '

@@ -225,7 +225,7 @@ class SuggestionsScreen extends StatelessWidget {
             child: const Row(
               children: [
                 Icon(Symbols.warning, size: 18, color: AppTheme.secondary),
-                const SizedBox(width: 8),
+                SizedBox(width: 8),
                 Text('Missing: Rice, Oil', style: TextStyle(color: AppTheme.secondary, fontWeight: FontWeight.bold, fontSize: 14)),
               ],
             ),

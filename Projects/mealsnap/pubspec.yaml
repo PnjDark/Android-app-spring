@@ -50,7 +50,7 @@ dependencies:
   
   # Camera & Image Picker
   image_picker: ^1.0.4
-  camera: ^0.10.5+2
+  camera: ^0.10.5+9
   image: ^4.0.17 # Added for image processing
 
   # ML Packages

@@ -309,7 +309,7 @@ class _GradeScreenState extends State<GradeScreen> {
               ),
             ),
           );
-        }).toList(),
+        }),
       ],
     );
   }
@@ -352,7 +352,7 @@ class _GradeScreenState extends State<GradeScreen> {
                   ],
                 ),
               );
-            }).toList(),
+            }),
           ],
         ),
       ),

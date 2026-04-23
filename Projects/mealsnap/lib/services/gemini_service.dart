@@ -333,10 +333,10 @@ class GeminiService {
   // -- Prompt constants --------------------------------------------------------
 
   static const _mealPrompt = '''
-You are a professional nutritionist and food-recognition AI with expertise in \
+You are a professional nutritionist and food-recognition AI with expertise in 
 African, Asian, Western, and Latin cuisines.
 
-Analyse this meal photo and respond ONLY with a single JSON object that \
+Analyse this meal photo and respond ONLY with a single JSON object that 
 matches the schema below -- no preamble, no markdown, no extra text.
 
 {
@@ -366,7 +366,7 @@ matches the schema below -- no preamble, no markdown, no extra text.
 }
 
 Rules:
-- Identify regional dishes precisely -- never fall back to "rice and stew" when \
+- Identify regional dishes precisely -- never fall back to "rice and stew" when 
   "Jollof Rice" or "Thieboudienne" is correct.
 - List EVERY visible ingredient, mark top 3-4 as is_major:true.
 - If multiple dishes are visible, analyse the main dish; list sides in ingredients.
@@ -377,7 +377,7 @@ Rules:
   static const _ingredientsPrompt = '''
 You are an expert chef and food scientist with global cuisine knowledge.
 
-Identify ALL visible ingredients or food items in this image and respond ONLY \
+Identify ALL visible ingredients or food items in this image and respond ONLY 
 with a single JSON object -- no preamble, no markdown, no extra text.
 
 {
@@ -416,7 +416,7 @@ Rules:
   static const _receiptPrompt = '''
 You are a receipt OCR and data-extraction expert.
 
-Extract all information from this receipt image and respond ONLY with a single \
+Extract all information from this receipt image and respond ONLY with a single 
 JSON object -- no preamble, no markdown, no extra text.
 
 {
@@ -445,7 +445,7 @@ Rules:
 
   static const _mealTextPreamble = '''
 You are a professional nutritionist.
-Analyse the user's meal description and respond ONLY with a single JSON \
+Analyse the user's meal description and respond ONLY with a single JSON 
 object -- no preamble, no markdown, no extra text.
 
 {

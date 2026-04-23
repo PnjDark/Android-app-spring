@@ -1,9 +1,130 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../core/app_theme.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-class HomeScreen extends StatelessWidget {
+// Data Models
+class NutritionData {
+  final double calories;
+  final double maxCalories;
+  final double protein;
+  final double maxProtein;
+  final double carbs;
+  final double maxCarbs;
+  final double fats;
+  final double maxFats;
+
+  NutritionData({
+    required this.calories,
+    required this.maxCalories,
+    required this.protein,
+    required this.maxProtein,
+    required this.carbs,
+    required this.maxCarbs,
+    required this.fats,
+    required this.maxFats,
+  });
+
+  factory NutritionData.fromFirestore(DocumentSnapshot doc) {
+    Map data = doc.data() as Map<String, dynamic>;
+    return NutritionData(
+      calories: (data['calories'] ?? 0).toDouble(),
+      maxCalories: (data['maxCalories'] ?? 0).toDouble(),
+      protein: (data['protein'] ?? 0).toDouble(),
+      maxProtein: (data['maxProtein'] ?? 0).toDouble(),
+      carbs: (data['carbs'] ?? 0).toDouble(),
+      maxCarbs: (data['maxCarbs'] ?? 0).toDouble(),
+      fats: (data['fats'] ?? 0).toDouble(),
+      maxFats: (data['maxFats'] ?? 0).toDouble(),
+    );
+  }
+}
+
+class Meal {
+  final String name;
+  final String tag;
+  final String imageUrl;
+
+  Meal({required this.name, required this.tag, required this.imageUrl});
+
+  factory Meal.fromFirestore(DocumentSnapshot doc) {
+    Map data = doc.data() as Map<String, dynamic>;
+    return Meal(
+      name: data['name'] ?? '',
+      tag: data['tag'] ?? '',
+      imageUrl: data['imageUrl'] ?? '',
+    );
+  }
+}
+
+class Activity {
+  final String title;
+  final String subtitle;
+  final String trailing;
+  final String icon;
+  final String color;
+
+  Activity({
+    required this.title,
+    required this.subtitle,
+    required this.trailing,
+    required this.icon,
+    required this.color,
+  });
+
+  factory Activity.fromFirestore(DocumentSnapshot doc) {
+    Map data = doc.data() as Map<String, dynamic>;
+    return Activity(
+      title: data['title'] ?? '',
+      subtitle: data['subtitle'] ?? '',
+      trailing: data['trailing'] ?? '',
+      icon: data['icon'] ?? '',
+      color: data['color'] ?? '',
+    );
+  }
+}
+
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  late Future<NutritionData> _nutritionFuture;
+  late Future<Meal> _mealFuture;
+  late Future<List<Activity>> _activitiesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _nutritionFuture = _fetchNutritionData();
+    _mealFuture = _fetchSuggestedMeal();
+    _activitiesFuture = _fetchRecentActivities();
+  }
+
+  Future<NutritionData> _fetchNutritionData() async {
+    final doc = await FirebaseFirestore.instance
+        .collection('nutrition')
+        .doc('dailyProgress')
+        .get();
+    return NutritionData.fromFirestore(doc);
+  }
+
+  Future<Meal> _fetchSuggestedMeal() async {
+    final doc = await FirebaseFirestore.instance
+        .collection('meals')
+        .doc('suggested')
+        .get();
+    return Meal.fromFirestore(doc);
+  }
+
+  Future<List<Activity>> _fetchRecentActivities() async {
+    final snapshot =
+        await FirebaseFirestore.instance.collection('activities').get();
+    return snapshot.docs.map((doc) => Activity.fromFirestore(doc)).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,13 +176,52 @@ class HomeScreen extends StatelessWidget {
               style: Theme.of(context).textTheme.headlineLarge,
             ),
             const SizedBox(height: 32),
-            _buildNutritionProgress(context),
+            FutureBuilder<NutritionData>(
+              future: _nutritionFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                } else if (snapshot.hasError) {
+                  return const Center(child: Text('Error fetching data'));
+                } else if (snapshot.hasData) {
+                  return _buildNutritionProgress(context, snapshot.data!);
+                } else {
+                  return const Center(child: Text('No data available'));
+                }
+              },
+            ),
             const SizedBox(height: 32),
             _buildActionButtons(context),
             const SizedBox(height: 32),
-            _buildSuggestedMeal(context),
+            FutureBuilder<Meal>(
+              future: _mealFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                } else if (snapshot.hasError) {
+                  return const Center(child: Text('Error fetching data'));
+                } else if (snapshot.hasData) {
+                  return _buildSuggestedMeal(context, snapshot.data!);
+                } else {
+                  return const Center(child: Text('No data available'));
+                }
+              },
+            ),
             const SizedBox(height: 32),
-            _buildRecentActivity(context),
+            FutureBuilder<List<Activity>>(
+              future: _activitiesFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                } else if (snapshot.hasError) {
+                  return const Center(child: Text('Error fetching data'));
+                } else if (snapshot.hasData) {
+                  return _buildRecentActivity(context, snapshot.data!);
+                } else {
+                  return const Center(child: Text('No data available'));
+                }
+              },
+            ),
             const SizedBox(height: 100),
           ],
         ),
@@ -69,7 +229,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildNutritionProgress(BuildContext context) {
+  Widget _buildNutritionProgress(BuildContext context, NutritionData nutrition) {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -93,16 +253,16 @@ class HomeScreen extends StatelessWidget {
           const SizedBox(height: 24),
           Row(
             children: [
-              _buildCircularProgress(context),
+              _buildCircularProgress(context, nutrition),
               const SizedBox(width: 32),
               Expanded(
                 child: Column(
                   children: [
-                    _buildProgressBar(context, 'Protein', '85g / 120g', 0.7, AppTheme.primary),
+                    _buildProgressBar(context, 'Protein', '${nutrition.protein}g / ${nutrition.maxProtein}g', nutrition.protein / nutrition.maxProtein, AppTheme.primary),
                     const SizedBox(height: 16),
-                    _buildProgressBar(context, 'Carbs', '180g / 250g', 0.72, AppTheme.secondaryContainer),
+                    _buildProgressBar(context, 'Carbs', '${nutrition.carbs}g / ${nutrition.maxCarbs}g', nutrition.carbs / nutrition.maxCarbs, AppTheme.secondaryContainer),
                     const SizedBox(height: 16),
-                    _buildProgressBar(context, 'Fats', '45g / 70g', 0.64, AppTheme.tertiaryContainer),
+                    _buildProgressBar(context, 'Fats', '${nutrition.fats}g / ${nutrition.maxFats}g', nutrition.fats / nutrition.maxFats, AppTheme.tertiaryContainer),
                   ],
                 ),
               ),
@@ -113,7 +273,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildCircularProgress(BuildContext context) {
+  Widget _buildCircularProgress(BuildContext context, NutritionData nutrition) {
     return SizedBox(
       width: 120,
       height: 120,
@@ -124,7 +284,7 @@ class HomeScreen extends StatelessWidget {
             width: 120,
             height: 120,
             child: CircularProgressIndicator(
-              value: 1450 / 2200,
+              value: nutrition.calories / nutrition.maxCalories,
               strokeWidth: 12,
               backgroundColor: AppTheme.surfaceContainerLow,
               valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primary),
@@ -135,11 +295,11 @@ class HomeScreen extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                '1,450',
+                '${nutrition.calories.toInt()}',
                 style: Theme.of(context).textTheme.headlineMedium,
               ),
               Text(
-                '/ 2,200 KCAL',
+                '/ ${nutrition.maxCalories.toInt()} KCAL',
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
                       fontSize: 10,
                       color: AppTheme.outline,
@@ -249,7 +409,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildSuggestedMeal(BuildContext context) {
+  Widget _buildSuggestedMeal(BuildContext context, Meal meal) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -259,9 +419,8 @@ class HomeScreen extends StatelessWidget {
           height: 240,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(24),
-            image: const DecorationImage(
-              image: NetworkImage(
-                  'https://lh3.googleusercontent.com/aida-public/AB6AXuB4L0BmYcmY6hpUDnyzl_pjvQEk8lg0QVc-Fwl1DzPhMYGtv7wlMFPtxjgkbrRtt1SbHGphZk5sfjmfRw08RP_1iiJPJbaq_OO3D06SP1sy72pN1KFhQgyh6Yg04pcOlqg7n4NlfI3dPG2Yk-CyE8YOkeXmO4pywi8sRJWdV5iYriPiVEBsQ0xb5lyR0QPLG-qB69gHD4wac24whRU0r4y28lppe2o2lqV-NVXqm_OUOuwvjEPCICgIddQr9gr4qsAess8g1mtUx7ak'),
+            image: DecorationImage(
+              image: NetworkImage(meal.imageUrl),
               fit: BoxFit.cover,
             ),
           ),
@@ -289,15 +448,15 @@ class HomeScreen extends StatelessWidget {
                         color: const Color(0xFFA3F69C),
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: const Text(
-                        'HIGH IN PROTEIN',
-                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF002204)),
+                      child: Text(
+                        meal.tag,
+                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF002204)),
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
-                      'Plantain & Egg Stew',
-                      style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                    Text(
+                      meal.name,
+                      style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
@@ -318,7 +477,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildRecentActivity(BuildContext context) {
+  Widget _buildRecentActivity(BuildContext context, List<Activity> activities) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -333,23 +492,19 @@ class HomeScreen extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        _buildActivityItem(
-          context,
-          'Breakfast: Fufu & Ndolé',
-          'Today, 8:30 AM',
-          '850 kcal',
-          Symbols.breakfast_dining,
-          AppTheme.primary,
-        ),
-        const SizedBox(height: 12),
-        _buildActivityItem(
-          context,
-          'Grocery Receipt',
-          'Yesterday, 5:45 PM',
-          '\$45.20',
-          Symbols.receipt_long,
-          AppTheme.tertiary,
-        ),
+        ...activities
+            .map((activity) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _buildActivityItem(
+                    context,
+                    activity.title,
+                    activity.subtitle,
+                    activity.trailing,
+                    _getIconFromString(activity.icon),
+                    _getColorFromString(activity.color),
+                  ),
+                ))
+            .toList(),
       ],
     );
   }
@@ -385,5 +540,27 @@ class HomeScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  IconData _getIconFromString(String iconString) {
+    switch (iconString) {
+      case 'breakfast_dining':
+        return Symbols.breakfast_dining;
+      case 'receipt_long':
+        return Symbols.receipt_long;
+      default:
+        return Symbols.restaurant;
+    }
+  }
+
+  Color _getColorFromString(String colorString) {
+    switch (colorString) {
+      case 'primary':
+        return AppTheme.primary;
+      case 'tertiary':
+        return AppTheme.tertiary;
+      default:
+        return AppTheme.onSurface;
+    }
   }
 }
