@@ -162,7 +162,7 @@ class CliWizard {
         maxScore: maxScore,
         weight: weight,
       ));
-      _printSuccess('Added $name (${weightPercent}%)');
+      _printSuccess('Added $name ($weightPercent%)');
       if (totalWeight < 0.99) {
         final more = _input('Add another? (y/n): ', required: false)?.toLowerCase();
         if (more != 'y') break;

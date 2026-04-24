@@ -1,526 +1,835 @@
 import 'dart:io';
-import 'dart:convert';
 
 import 'package:camera/camera.dart';
-import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-// import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
-import '../services/local_recognition_service.dart';
-import '../services/gemini_service.dart';
 import '../firebase_config.dart';
 import '../models.dart';
+import '../services/gemini_service.dart';
+import '../services/local_recognition_service.dart';
 
 enum ScanMode { meal, ingredients, receipt, voice }
 
+// -----------------------------------------------------------------------------
+// ScanScreen widget
+// -----------------------------------------------------------------------------
+
 class ScanScreen extends StatefulWidget {
   final ScanMode initialMode;
+  final List<CameraDescription>? cameras;
+  final LocalRecognitionService? localRecognitionService;
+  final GeminiService? geminiService;
 
-  const ScanScreen({super.key, this.initialMode = ScanMode.meal});
+  const ScanScreen({
+    super.key,
+    this.initialMode = ScanMode.meal,
+    this.cameras,
+    this.localRecognitionService,
+    this.geminiService,
+  });
 
   @override
   State<ScanScreen> createState() => _ScanScreenState();
 }
 
-class _ScanScreenState extends State<ScanScreen> {
-  CameraController? _controller;
-  Future<void>? _initializeControllerFuture;
-  bool _isFlashOn = false;
+class _ScanScreenState extends State<ScanScreen>
+    with SingleTickerProviderStateMixin {
+  // -- Camera ------------------------------------------------------------------
+  CameraController? _cameraController;
+  Future<void>? _cameraReady;
+  bool _flashOn = false;
+
+  // -- Scan state ---------------------------------------------------------------
   ScanMode _mode = ScanMode.meal;
-  String _scanResult = 'Ready to scan your meal.';
   bool _isAnalyzing = false;
-  late final LocalRecognitionService _recognitionService;
+  String _statusText = '';
+  // Detected label names shown inside the viewfinder overlay.
+  List<String> _overlayTags = [];
+  // Final formatted result shown in the bottom panel.
+  String _resultText = '';
+  // Whether we have a completed result to show.
+  bool _hasResult = false;
+
+  // -- Services -----------------------------------------------------------------
+  late final LocalRecognitionService _localService;
   late final GeminiService _geminiService;
-  // late final stt.SpeechToText _speech;
-  // bool _isListening = false;
-  // String _voiceTranscript = '';
+
+  // -- Animation for scan line --------------------------------------------------
+  late final AnimationController _scanLineAnim;
+  late final Animation<double> _scanLinePos;
 
   @override
   void initState() {
     super.initState();
-    // _speech = stt.SpeechToText();
-    _recognitionService = LocalRecognitionService();
-    _geminiService = GeminiService(geminiApiKey);
     _mode = widget.initialMode;
-    _scanResult = 'Ready to scan ${widget.initialMode.name}';
-    _initializeCamera();
+    _statusText = _idleStatus(_mode);
+
+    _localService = widget.localRecognitionService ?? LocalRecognitionService();
+    _geminiService = widget.geminiService ?? GeminiService(geminiApiKey);
+
+    _scanLineAnim = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
+    _scanLinePos = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _scanLineAnim, curve: Curves.easeInOut),
+    );
+
+    _initCamera();
   }
 
   @override
   void dispose() {
-    _controller?.dispose();
-    _recognitionService.dispose();
+    _cameraController?.dispose();
+    _localService.dispose();
+    _scanLineAnim.dispose();
     super.dispose();
   }
 
-  Future<void> _initializeCamera() async {
+  // -- Camera init --------------------------------------------------------------
+
+  Future<void> _initCamera() async {
     try {
-      final cameras = await availableCameras();
-      final backCamera = cameras.firstWhere(
-        (camera) => camera.lensDirection == CameraLensDirection.back,
+      final cameras = widget.cameras ?? await availableCameras();
+      final back = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
       );
-      _controller = CameraController(
-        backCamera,
-        ResolutionPreset.high,
-        enableAudio: true,
-      );
-      _initializeControllerFuture = _controller!.initialize();
-      await _initializeControllerFuture;
-      setState(() {});
+      final ctrl = CameraController(back, ResolutionPreset.high,
+          enableAudio: false);
+      _cameraReady = ctrl.initialize();
+      _cameraController = ctrl;
+      await _cameraReady;
+      if (mounted) setState(() {});
     } catch (e) {
-      setState(() {
-        _scanResult = 'Camera failed to initialize: $e';
-      });
+      if (mounted) {
+        setState(() => _statusText = 'Camera unavailable: $e');
+      }
     }
   }
 
   Future<void> _toggleFlash() async {
-    if (_controller == null) return;
-    try {
-      _isFlashOn = !_isFlashOn;
-      await _controller!.setFlashMode(
-        _isFlashOn ? FlashMode.torch : FlashMode.off,
-      );
-      setState(() {});
-    } catch (_) {
-      setState(() {
-        _scanResult = 'Unable to toggle flash.';
-      });
-    }
+    if (_cameraController == null) return;
+    _flashOn = !_flashOn;
+    await _cameraController!
+        .setFlashMode(_flashOn ? FlashMode.torch : FlashMode.off);
+    if (mounted) setState(() {});
   }
 
+  // -- Capture / gallery --------------------------------------------------------
+
   Future<void> _capturePhoto() async {
-    if (_controller == null || !_controller!.value.isInitialized) return;
-    if (_mode == ScanMode.voice) {
-      setState(() {
-        _scanResult = 'Voice mode is not supported for photo capture yet.';
-      });
+    if (_cameraController == null ||
+        !_cameraController!.value.isInitialized ||
+        _isAnalyzing) {
       return;
     }
-
+    if (_mode == ScanMode.voice) {
+      _showVoiceUnsupported();
+      return;
+    }
+    setState(() {
+      _isAnalyzing = true;
+      _hasResult = false;
+      _overlayTags = [];
+      _statusText = 'Capturing...';
+    });
     try {
-      setState(() {
-        _isAnalyzing = true;
-        _scanResult = 'Capturing image...';
-      });
-      final picture = await _controller!.takePicture();
-      await _processImage(picture.path);
+      final file = await _cameraController!.takePicture();
+      await _processImage(File(file.path));
     } catch (e) {
-      setState(() {
-        _scanResult = 'Capture failed: $e';
-        _isAnalyzing = false;
-      });
+      _setError('Capture failed: $e');
     }
   }
 
   Future<void> _pickFromGallery() async {
+    if (_isAnalyzing) return;
     if (_mode == ScanMode.voice) {
-      setState(() {
-        _scanResult = 'Voice mode is not supported for gallery images.';
-      });
+      _showVoiceUnsupported();
       return;
     }
-
-    final image = await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (image == null) return;
+    final picked =
+        await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (picked == null) return;
     setState(() {
       _isAnalyzing = true;
-      _scanResult = 'Scanning gallery image...';
+      _hasResult = false;
+      _overlayTags = [];
+      _statusText = 'Loading image...';
     });
-    await _processImage(image.path);
+    await _processImage(File(picked.path));
   }
 
-  Future<void> _processImage(String path) async {
-    final imageFile = File(path);
+  // -- Core processing pipeline -------------------------------------------------
 
+  Future<void> _processImage(File image) async {
     try {
-      setState(() {
-        _isAnalyzing = true;
-        _scanResult = 'Analyzing image...';
-      });
-
-      Map<String, dynamic> parsedAnalysis;
-
       if (_mode == ScanMode.receipt) {
-        parsedAnalysis = await _recognitionService.recognizeReceiptImage(imageFile);
+        await _processReceipt(image);
       } else {
-        // First, get basic recognition from ML Kit
-        final basicAnalysis = await _recognitionService.recognizeFoodImage(
-          imageFile,
-          ingredientsMode: _mode == ScanMode.ingredients,
-        );
-
-        // Then enhance with Gemini for better analysis
-        setState(() {
-          _scanResult = 'Enhancing analysis with AI...';
-        });
-
-        final modeString = _mode == ScanMode.ingredients ? 'ingredients' : 'meal';
-        final geminiAnalysis = await _geminiService.analyzeMealImage(imageFile, modeString);
-
-        // Combine results
-        parsedAnalysis = _combineAnalyses(basicAnalysis, geminiAnalysis);
+        await _processFoodOrIngredients(image);
       }
-
-      await _saveToFirestore(path, parsedAnalysis);
-
-      setState(() {
-        _scanResult = _formatAnalysisResult(parsedAnalysis);
-        _isAnalyzing = false;
-      });
     } catch (e) {
+      _setError('Analysis failed: $e');
+    }
+  }
+
+  Future<void> _processFoodOrIngredients(File image) async {
+    // Step 1 -- fast ML Kit pass to populate overlay tags immediately.
+    setState(() => _statusText = 'Detecting food...');
+    final localResult = await _localService.recognizeFoodImage(image);
+    if (mounted) {
       setState(() {
-        _scanResult = 'Analysis failed: $e';
+        _overlayTags = localResult.foodLabels
+            .take(4)
+            .map((l) => l['label'] as String)
+            .toList();
+      });
+    }
+
+    // Step 2 -- Gemini deep analysis.
+    setState(() => _statusText = 'Analysing with AI...');
+    final MealAnalysisResult geminiResult;
+    if (_mode == ScanMode.ingredients) {
+      geminiResult = await _geminiService.analyzeIngredientsImage(image);
+    } else {
+      geminiResult = await _geminiService.analyzeMealImage(image);
+    }
+
+    // Step 3 -- update overlay with Gemini's precise ingredient names.
+    final smartTags = geminiResult.majorIngredientNames;
+    if (mounted) {
+      setState(() {
+        _overlayTags = smartTags.isNotEmpty ? smartTags : _overlayTags;
+      });
+    }
+
+    // Step 4 -- save to Firestore.
+    final combined = {
+      'local_labels': localResult.foodLabels,
+      'gemini_analysis': geminiResult.toJson(),
+      'enhanced': true,
+    };
+    await _saveToFirestore(image.path, combined);
+
+    // Step 5 -- display result.
+    if (mounted) {
+      setState(() {
         _isAnalyzing = false;
+        _hasResult = true;
+        _statusText = _idleStatus(_mode);
+        _resultText = _formatMealResult(geminiResult);
       });
     }
   }
 
-  Future<void> _saveToFirestore(String imagePath, Map<String, dynamic> analysis) async {
+  Future<void> _processReceipt(File image) async {
+    // Step 1 -- OCR text via ML Kit.
+    setState(() => _statusText = 'Reading receipt text...');
+    final rawText = await _localService.recognizeReceiptText(image);
+
+    // Step 2 -- Gemini parses the OCR text into structured data.
+    setState(() => _statusText = 'Parsing receipt with AI...');
+    final result = await _geminiService.analyzeReceiptImage(image);
+
+    await _saveToFirestore(image.path, result.toJson());
+
+    if (mounted) {
+      setState(() {
+        _isAnalyzing = false;
+        _hasResult = true;
+        _overlayTags = result.items
+            .where((i) => i.isFood)
+            .take(4)
+            .map((i) => i.name)
+            .toList();
+        _statusText = _idleStatus(_mode);
+        _resultText = _formatReceiptResult(result);
+      });
+    }
+  }
+
+  // -- Firestore ----------------------------------------------------------------
+
+  Future<void> _saveToFirestore(
+      String imagePath, Map<String, dynamic> analysis) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-
-    final mealEntry = MealEntry(
-      id: '', // Firestore will generate
+    final entry = MealEntry(
+      id: '',
       userId: user.uid,
       type: _mode.name,
-      description: _formatAnalysisResult(analysis),
+      description: _resultText,
       analysis: analysis,
       timestamp: DateTime.now(),
-      // TODO: Upload image to Firebase Storage and get URL
     );
-
-    await FirebaseFirestore.instance.collection('meals').add(mealEntry.toFirestore());
+    await FirebaseFirestore.instance
+        .collection('meals')
+        .add(entry.toFirestore());
   }
 
-  Map<String, dynamic> _combineAnalyses(Map<String, dynamic> basic, String gemini) {
-    // Try to parse Gemini response as JSON
-    try {
-      // Clean the response (remove markdown formatting)
-      String cleanResponse = gemini
-          .replaceAll('```json', '')
-          .replaceAll('```', '')
-          .replaceAll('```\n', '')
-          .trim();
+  // -- Helpers ------------------------------------------------------------------
 
-      // Find JSON content
-      final jsonStart = cleanResponse.indexOf('{');
-      final jsonEnd = cleanResponse.lastIndexOf('}');
-      if (jsonStart != -1 && jsonEnd != -1) {
-        cleanResponse = cleanResponse.substring(jsonStart, jsonEnd + 1);
-      }
-
-      final geminiData = jsonDecode(cleanResponse);
-
-      // Combine the analyses
-      return {
-        ...basic,
-        'gemini_analysis': geminiData,
-        'enhanced': true,
-      };
-    } catch (e) {
-      // If JSON parsing fails, return basic analysis with raw Gemini response
-      return {
-        ...basic,
-        'gemini_raw': gemini,
-        'enhanced': false,
-      };
+  void _setError(String msg) {
+    if (mounted) {
+      setState(() {
+        _isAnalyzing = false;
+        _statusText = msg;
+      });
     }
   }
 
-  // Future<void> _analyzeVoiceInput(String transcript) async {
-  //   setState(() {
-  //     _isAnalyzing = true;
-  //     _scanResult = 'Analyzing voice input...';
-  //   });
-
-  //   try {
-  //     final analysis = await _geminiService.analyzeText(transcript, _mode.name);
-
-  //     Map<String, dynamic> parsedAnalysis;
-  //     try {
-  //       String cleanAnalysis = analysis.replaceAll('```json', '').replaceAll('```', '').trim();
-  //       parsedAnalysis = jsonDecode(cleanAnalysis);
-  //     } catch (e) {
-  //       parsedAnalysis = {'raw_response': analysis};
-  //     }
-
-  //     await _saveVoiceToFirestore(transcript, parsedAnalysis);
-
-  //     setState(() {
-  //       _scanResult = _formatAnalysisResult(parsedAnalysis);
-  //       _isAnalyzing = false;
-  //     });
-  //   } catch (e) {
-  //     setState(() {
-  //       _scanResult = 'Voice analysis failed: $e';
-  //       _isAnalyzing = false;
-  //     });
-  //   }
-  // }
-
-  // Future<void> _saveVoiceToFirestore(String transcript, Map<String, dynamic> analysis) async {
-  //   final user = FirebaseAuth.instance.currentUser;
-  //   if (user == null) return;
-
-  //   final mealEntry = MealEntry(
-  //     id: '',
-  //     userId: user.uid,
-  //     type: '${_mode.name}_voice',
-  //     description: transcript,
-  //     analysis: analysis,
-  //     timestamp: DateTime.now(),
-  //   );
-
-  //   await FirebaseFirestore.instance.collection('meals').add(mealEntry.toFirestore());
-  // }
-
-  // Future<void> _toggleVoiceRecording() async {
-  //   if (!_isListening) {
-  //     final available = await _speech.initialize(
-  //       onStatus: (status) {},
-  //       onError: (errorNotification) {},
-  //     );
-  //     if (!available) {
-  //       setState(() {
-  //         _scanResult = 'Voice recognition unavailable.';
-  //       });
-  //       return;
-  //     }
-  //     setState(() {
-  //       _isListening = true;
-  //       _voiceTranscript = '';
-  //       _scanResult = 'Listening for voice input...';
-  //     });
-  //     _speech.listen(onResult: _onSpeechResult);
-  //   } else {
-  //     _speech.stop();
-  //     setState(() {
-  //       _isListening = false;
-  //     });
-  //     if (_voiceTranscript.isNotEmpty) {
-  //       await _analyzeVoiceInput(_voiceTranscript);
-  //     } else {
-  //       setState(() {
-  //         _scanResult = 'No voice input captured.';
-  //       });
-  //     }
-  //   }
-  // }
-
-  // void _onSpeechResult(dynamic result) {
-  //   setState(() {
-  //     _voiceTranscript = result.recognizedWords ?? '';
-  //     _scanResult = 'Voice input: $_voiceTranscript';
-  //   });
-  // }
+  void _showVoiceUnsupported() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Voice mode coming soon!')),
+    );
+  }
 
   void _setMode(ScanMode mode) {
     setState(() {
       _mode = mode;
-      _scanResult = 'Ready to scan ${_mode.name}';
+      _statusText = _idleStatus(mode);
+      _overlayTags = [];
+      _hasResult = false;
+      _resultText = '';
     });
   }
+
+  static String _idleStatus(ScanMode mode) {
+    switch (mode) {
+      case ScanMode.meal:
+        return 'Point at your meal and tap the button.';
+      case ScanMode.ingredients:
+        return 'Show the ingredients to identify them.';
+      case ScanMode.receipt:
+        return 'Hold the receipt flat under good light.';
+      case ScanMode.voice:
+        return 'Voice input -- coming soon.';
+    }
+  }
+
+  // -- Result formatting --------------------------------------------------------
+
+  String _formatMealResult(MealAnalysisResult r) {
+    final n = r.nutrition;
+    final ings = r.ingredients.isNotEmpty
+        ? r.ingredients.map((i) => i.name).join(', ')
+        : 'None detected';
+    final tags =
+        r.dietaryTags.isNotEmpty ? r.dietaryTags.join(' - ') : '';
+
+    final confidenceEmoji = switch (r.confidence) {
+      'high' => '[HIGH]',
+      'medium' => '[MED]',
+      _ => '[LOW]',
+    };
+    final healthEmoji = switch (r.healthRating) {
+      'excellent' => '[EXCELLENT]',
+      'good' => '[GOOD]',
+      'moderate' => '[MED]',
+      _ => '[LOW]',
+    };
+
+    return '${r.mealName}  $confidenceEmoji ${r.confidence} confidence\n'
+        '${r.mealCategory.toUpperCase()}  -  ${r.portionSize}\n'
+        '$healthEmoji ${r.healthRating.toUpperCase()}'
+        '${tags.isNotEmpty ? '  -  $tags' : ''}\n\n'
+        ' ${n.totalCalories.round()} kcal\n'
+        ' Protein ${n.proteinG.round()} g  '
+        ' Carbs ${n.carbsG.round()} g  '
+        ' Fat ${n.fatG.round()} g\n'
+        ' Fibre ${n.fiberG.round()} g  '
+        ' Sodium ${n.sodiumMg.round()} mg\n\n'
+        ' Ingredients:\n$ings';
+  }
+
+  String _formatReceiptResult(ReceiptAnalysisResult r) {
+    final foodItems =
+        r.items.where((i) => i.isFood).toList();
+    final lines = foodItems
+        .map((i) =>
+            '  ${i.quantity != null ? "${i.quantity} " : ""}${i.name}  '
+            '\$${i.price.toStringAsFixed(2)}')
+        .join('\n');
+
+    return ' ${r.storeName ?? "Receipt"}'
+        '${r.date != null ? "  -  ${r.date}" : ""}\n\n'
+        'Food items:\n$lines\n\n'
+        '${r.total != null ? "Total: \$${r.total!.toStringAsFixed(2)}" : ""}';
+  }
+
+  // -- Build --------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
+        child: Stack(children: [
+          _buildCameraPreview(),
+          _buildDimOverlay(),
+          _buildViewfinder(),
+          _buildTopBar(),
+          _buildBottomPanel(),
+        ]),
+      ),
+    );
+  }
+
+  // -- Camera preview -----------------------------------------------------------
+
+  Widget _buildCameraPreview() {
+    if (_cameraReady == null) {
+      return const Center(
+          child: CircularProgressIndicator(color: Colors.white));
+    }
+    return FutureBuilder<void>(
+      future: _cameraReady,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Center(
+              child: CircularProgressIndicator(color: Colors.white));
+        }
+        if (snap.hasError) {
+          return Center(
+            child: Text('Camera error: ${snap.error}',
+                style: const TextStyle(color: Colors.white)),
+          );
+        }
+        return Positioned.fill(child: CameraPreview(_cameraController!));
+      },
+    );
+  }
+
+  // -- Dim overlay --------------------------------------------------------------
+
+  Widget _buildDimOverlay() {
+    return Positioned.fill(
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Colors.black.withValues(alpha: 0.35),
+              Colors.transparent,
+              Colors.transparent,
+              Colors.black.withValues(alpha: 0.55),
+            ],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            stops: const [0, 0.25, 0.65, 1],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // -- Viewfinder ---------------------------------------------------------------
+
+  Widget _buildViewfinder() {
+    return Center(
+      child: SizedBox(
+        width: 290,
+        height: 290,
         child: Stack(
+          clipBehavior: Clip.none,
           children: [
-            if (_initializeControllerFuture != null)
-              FutureBuilder<void>(
-                future: _initializeControllerFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.done) {
-                    return CameraPreview(_controller!);
-                  }
-                  return const Center(child: CircularProgressIndicator());
-                },
-              )
-            else
-              const Center(child: CircularProgressIndicator()),
-            Positioned.fill(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.black.withValues(alpha: 0.25), Colors.transparent],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                  ),
-                ),
+            // Border
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.3), width: 1.5),
               ),
             ),
-            Positioned(
-              top: 16,
-              left: 16,
-              right: 16,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _buildCircleButton(
-                    icon: Icons.close,
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                  Row(
-                    children: [
-                      _buildCircleButton(
-                        icon: _isFlashOn ? Icons.flash_on : Icons.flash_off,
-                        onPressed: _toggleFlash,
-                      ),
-                      const SizedBox(width: 12),
-                      _buildCircleButton(
-                        icon: Icons.settings,
-                        onPressed: () {},
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            Center(
-              child: Container(
-                width: 280,
-                height: 280,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(32),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 2),
-                ),
-                child: Stack(
-                  children: [
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      child: Container(
-                        height: 2,
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [Colors.transparent, Color(0xFFA3F69C), Colors.transparent],
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 16,
-                      left: 16,
-                      child: _buildTag('Tomato'),
-                    ),
-                    Positioned(
-                      bottom: 60,
-                      right: 24,
-                      child: _buildTag('Onion'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Positioned(
-              bottom: 180,
-              left: 0,
-              right: 0,
-              child: IgnorePointer(
-                ignoring: true,
-                child: Center(
+
+            // Corner accents
+            ..._buildCorners(),
+
+            // Animated scan line (only while analysing)
+            if (_isAnalyzing)
+              AnimatedBuilder(
+                animation: _scanLinePos,
+                builder: (_, __) => Positioned(
+                  top: _scanLinePos.value * 278 + 6,
+                  left: 8,
+                  right: 8,
                   child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 24),
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Scanning for ingredients...',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _scanResult,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
+                    height: 2,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.transparent,
+                          Color(0xFFA3F69C),
+                          Colors.transparent,
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
+
+            // Dynamic ingredient tags
+            if (_overlayTags.isNotEmpty) ..._buildOverlayTags(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildCorners() {
+    const r = 20.0;
+    const t = 3.0;
+    const l = 28.0;
+    const c = Color(0xFFA3F69C);
+
+    Widget corner(
+            {double? top, double? left, double? right, double? bottom}) =>
+        Positioned(
+          top: top,
+          left: left,
+          right: right,
+          bottom: bottom,
+          child: SizedBox(
+            width: l,
+            height: l,
+            child: CustomPaint(
+              painter: _CornerPainter(
+                topLeft: top != null && left != null,
+                topRight: top != null && right != null,
+                bottomLeft: bottom != null && left != null,
+                bottomRight: bottom != null && right != null,
+                radius: r,
+                strokeWidth: t,
+                color: c,
+              ),
             ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: ScanMode.values.map((mode) {
-                        return _buildModeButton(mode);
-                      }).toList(),
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.4),
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _buildBottomControl(
-                          icon: Icons.photo_library,
-                          label: 'Gallery',
-                          onPressed: _pickFromGallery,
-                        ),
-                        GestureDetector(
-                          onTap: _isAnalyzing ? null : _capturePhoto,
-                          child: Container(
-                            width: 88,
-                            height: 88,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFFFC820C), Color(0xFF0D631B)],
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.3),
-                                  blurRadius: 16,
-                                  offset: const Offset(0, 8),
-                                ),
-                              ],
-                            ),
-                            child: Center(
-                              child: Icon(
-                                _isAnalyzing ? Icons.hourglass_top : Icons.camera_alt,
-                                color: Colors.white,
-                                size: 32,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+          ),
+        );
+
+    return [
+      corner(top: 0, left: 0),
+      corner(top: 0, right: 0),
+      corner(bottom: 0, left: 0),
+      corner(bottom: 0, right: 0),
+    ];
+  }
+
+  List<Widget> _buildOverlayTags() {
+    // Place tags at a few fixed offsets inside the viewfinder.
+    final positions = [
+      const Offset(12, 12),
+      const Offset(12, 240),
+      const Offset(160, 20),
+      const Offset(150, 240),
+    ];
+    return List.generate(
+      _overlayTags.length.clamp(0, positions.length),
+      (i) => Positioned(
+        left: positions[i].dx,
+        top: positions[i].dy,
+        child: _IngredientTag(label: _overlayTags[i]),
+      ),
+    );
+  }
+
+  // -- Top bar -------------------------------------------------------------------
+
+  Widget _buildTopBar() {
+    return Positioned(
+      top: 12,
+      left: 16,
+      right: 16,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          _CircleBtn(
+              icon: Icons.close,
+              onTap: () => Navigator.of(context).pop()),
+          Row(children: [
+            _CircleBtn(
+              icon: _flashOn ? Icons.flash_on : Icons.flash_off,
+              onTap: _toggleFlash,
+            ),
+            const SizedBox(width: 10),
+            _CircleBtn(icon: Icons.tune, onTap: () {}),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  // -- Bottom panel -------------------------------------------------------------
+
+  Widget _buildBottomPanel() {
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Status / result card
+          _buildStatusCard(),
+          const SizedBox(height: 8),
+
+          // Mode selector
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: ScanMode.values
+                  .map((m) => _ModeChip(
+                        mode: m,
+                        selected: _mode == m,
+                        onTap: () => _setMode(m),
+                      ))
+                  .toList(),
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Shutter row
+          Container(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.45),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(32)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _BottomControl(
+                  icon: Icons.photo_library_outlined,
+                  label: 'Gallery',
+                  onTap: _pickFromGallery,
+                ),
+                _ShutterButton(
+                  isAnalyzing: _isAnalyzing,
+                  onTap: _capturePhoto,
+                ),
+                // Spacer so shutter stays centred
+                const SizedBox(width: 56),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusCard() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: _isAnalyzing
+          ? _buildAnalyzingContent()
+          : _hasResult
+              ? _buildResultContent()
+              : _buildIdleContent(),
+    );
+  }
+
+  Widget _buildIdleContent() {
+    return Row(
+      children: [
+        const Icon(Icons.center_focus_weak,
+            color: Color(0xFFA3F69C), size: 18),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            _statusText,
+            style: const TextStyle(color: Colors.white70, fontSize: 13),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAnalyzingContent() {
+    return Row(
+      children: [
+        const SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Color(0xFFA3F69C),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            _statusText,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildResultContent() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.check_circle_outline,
+                color: Color(0xFFA3F69C), size: 18),
+            const SizedBox(width: 8),
+            const Text(
+              'Analysis complete',
+              style: TextStyle(
+                color: Color(0xFFA3F69C),
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const Spacer(),
+            GestureDetector(
+              onTap: () => setState(() {
+                _hasResult = false;
+                _resultText = '';
+                _overlayTags = [];
+                _statusText = _idleStatus(_mode);
+              }),
+              child: const Icon(Icons.close, color: Colors.white38, size: 16),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _resultText,
+          style: const TextStyle(
+              color: Colors.white, fontSize: 12, height: 1.55),
+        ),
+      ],
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Small reusable widgets
+// -----------------------------------------------------------------------------
+
+class _CircleBtn extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _CircleBtn({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black.withValues(alpha: 0.45),
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(11),
+          child: Icon(icon, color: Colors.white, size: 20),
+        ),
+      ),
+    );
+  }
+}
+
+class _IngredientTag extends StatelessWidget {
+  final String label;
+  const _IngredientTag({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D631B).withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(label,
+          style: const TextStyle(
+              color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+    );
+  }
+}
+
+class _ModeChip extends StatelessWidget {
+  final ScanMode mode;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ModeChip(
+      {required this.mode, required this.selected, required this.onTap});
+
+  static String _label(ScanMode m) {
+    switch (m) {
+      case ScanMode.meal:
+        return 'Meal';
+      case ScanMode.ingredients:
+        return 'Ingredients';
+      case ScanMode.receipt:
+        return 'Receipt';
+      case ScanMode.voice:
+        return 'Voice';
+    }
+  }
+
+  static IconData _icon(ScanMode m) {
+    switch (m) {
+      case ScanMode.meal:
+        return Icons.restaurant;
+      case ScanMode.ingredients:
+        return Icons.eco_outlined;
+      case ScanMode.receipt:
+        return Icons.receipt_long_outlined;
+      case ScanMode.voice:
+        return Icons.mic_none;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? Colors.white.withValues(alpha: 0.22)
+              : Colors.white.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected
+                ? const Color(0xFFA3F69C)
+                : Colors.white.withValues(alpha: 0.1),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(_icon(mode),
+                size: 13,
+                color: selected ? Colors.white : Colors.white60),
+            const SizedBox(width: 5),
+            Text(
+              _label(mode),
+              style: TextStyle(
+                color: selected ? Colors.white : Colors.white60,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
               ),
             ),
           ],
@@ -528,65 +837,64 @@ class _ScanScreenState extends State<ScanScreen> {
       ),
     );
   }
+}
 
-  Widget _buildCircleButton({required IconData icon, required VoidCallback onPressed}) {
-    return Material(
-      color: Colors.black.withValues(alpha: 0.4),
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onPressed,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Icon(icon, color: Colors.white, size: 20),
-        ),
-      ),
-    );
-  }
+class _ShutterButton extends StatelessWidget {
+  final bool isAnalyzing;
+  final VoidCallback onTap;
+  const _ShutterButton({required this.isAnalyzing, required this.onTap});
 
-  Widget _buildTag(String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0D631B).withValues(alpha: 0.8),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700),
-      ),
-    );
-  }
-
-  Widget _buildModeButton(ScanMode mode) {
-    final isSelected = _mode == mode;
-    final label = mode.name.replaceFirst(mode.name[0], mode.name[0].toUpperCase());
+  @override
+  Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => _setMode(mode),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      onTap: isAnalyzing ? null : onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 80,
+        height: 80,
         decoration: BoxDecoration(
-          color: isSelected ? Colors.white.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: isSelected ? const Color(0xFFA3F69C) : Colors.white.withValues(alpha: 0.12),
-          ),
+          shape: BoxShape.circle,
+          gradient: isAnalyzing
+              ? const LinearGradient(
+                  colors: [Color(0xFF555555), Color(0xFF333333)])
+              : const LinearGradient(
+                  colors: [Color(0xFFFC820C), Color(0xFF0D631B)]),
+          boxShadow: [
+            BoxShadow(
+              color: (isAnalyzing
+                      ? Colors.grey
+                      : const Color(0xFF0D631B))
+                  .withValues(alpha: 0.4),
+              blurRadius: 20,
+              spreadRadius: 2,
+            )
+          ],
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.white70,
-            fontWeight: FontWeight.bold,
-            fontSize: 12,
-          ),
+        child: Center(
+          child: isAnalyzing
+              ? const SizedBox(
+                  width: 26,
+                  height: 26,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2.5, color: Colors.white))
+              : const Icon(Icons.camera_alt, color: Colors.white, size: 30),
         ),
       ),
     );
   }
+}
 
-  Widget _buildBottomControl({required IconData icon, required String label, required VoidCallback onPressed}) {
-    return InkWell(
-      onTap: onPressed,
+class _BottomControl extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _BottomControl(
+      {required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
       child: Column(
         children: [
           Container(
@@ -596,65 +904,82 @@ class _ScanScreenState extends State<ScanScreen> {
               color: Colors.white.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: Icon(icon, color: Colors.white, size: 24),
+            child: Icon(icon, color: Colors.white, size: 22),
           ),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
-          ),
+          const SizedBox(height: 6),
+          Text(label,
+              style: const TextStyle(color: Colors.white60, fontSize: 11)),
         ],
       ),
     );
   }
+}
 
-  String _formatAnalysisResult(Map<String, dynamic> analysis) {
-    if (analysis.containsKey('gemini_analysis')) {
-      final geminiData = analysis['gemini_analysis'] as Map<String, dynamic>;
+// -----------------------------------------------------------------------------
+// Corner accent painter
+// -----------------------------------------------------------------------------
 
-      if (geminiData.containsKey('estimated_calories')) {
-        final calories = geminiData['estimated_calories'];
-        final ingredients = (geminiData['main_ingredients'] as List<dynamic>?)?.join(', ') ?? 'N/A';
-        final protein = geminiData['protein_g'] ?? 'N/A';
-        final carbs = geminiData['carbs_g'] ?? 'N/A';
-        final fat = geminiData['fat_g'] ?? 'N/A';
+class _CornerPainter extends CustomPainter {
+  final bool topLeft, topRight, bottomLeft, bottomRight;
+  final double radius, strokeWidth;
+  final Color color;
 
-        return '🍽️ Enhanced Analysis:\n'
-               'Calories: $calories kcal\n'
-               'Ingredients: $ingredients\n'
-               'Protein: ${protein}g, Carbs: ${carbs}g, Fat: ${fat}g';
-      } else if (geminiData.containsKey('ingredients')) {
-        final ingredients = (geminiData['ingredients'] as List<dynamic>?)?.join(', ') ?? 'N/A';
-        return '🥬 Detected Ingredients:\n$ingredients';
-      }
+  const _CornerPainter({
+    required this.topLeft,
+    required this.topRight,
+    required this.bottomLeft,
+    required this.bottomRight,
+    required this.radius,
+    required this.strokeWidth,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+
+    final path = Path();
+
+    if (topLeft) {
+      path
+        ..moveTo(0, size.height * 0.5)
+        ..lineTo(0, radius)
+        ..arcToPoint(Offset(radius, 0), radius: Radius.circular(radius))
+        ..lineTo(size.width * 0.5, 0);
+    }
+    if (topRight) {
+      path
+        ..moveTo(size.width * 0.5, 0)
+        ..lineTo(size.width - radius, 0)
+        ..arcToPoint(Offset(size.width, radius),
+            radius: Radius.circular(radius))
+        ..lineTo(size.width, size.height * 0.5);
+    }
+    if (bottomLeft) {
+      path
+        ..moveTo(0, size.height * 0.5)
+        ..lineTo(0, size.height - radius)
+        ..arcToPoint(Offset(radius, size.height),
+            radius: Radius.circular(radius), clockwise: false)
+        ..lineTo(size.width * 0.5, size.height);
+    }
+    if (bottomRight) {
+      path
+        ..moveTo(size.width * 0.5, size.height)
+        ..lineTo(size.width - radius, size.height)
+        ..arcToPoint(Offset(size.width, size.height - radius),
+            radius: Radius.circular(radius), clockwise: false)
+        ..lineTo(size.width, size.height * 0.5);
     }
 
-    // Fallback to basic analysis
-    if (analysis.containsKey('labels')) {
-      final labels = (analysis['labels'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [];
-      if (labels.isEmpty) {
-        return 'No food labels were detected. Try a clearer photo of your meal.';
-      }
-
-      final detected = labels.map((item) => item['label']).join(', ');
-      final confidence = labels
-          .map((item) {
-            final score = (item['confidence'] as num?)?.toDouble() ?? 0.0;
-            return '${item['label']}: ${(score * 100).toStringAsFixed(0)}%';
-          })
-          .join(', ');
-
-      return 'Detected: $detected\nConfidence: $confidence';
-    } else if (analysis.containsKey('items')) {
-      final items = analysis['items'] as List<dynamic>? ?? [];
-      final total = analysis['total'] ?? 'N/A';
-      return 'Receipt Items:\n${items.map((item) => '- ${item['name']}: \$${item['price']}').join('\n')}\nTotal: \$$total';
-    } else if (analysis.containsKey('raw_response')) {
-      return analysis['raw_response'];
-    } else if (analysis.containsKey('gemini_raw')) {
-      return 'AI Analysis: ${analysis['gemini_raw']}';
-    } else {
-      return 'Analysis complete. Data saved.';
-    }
+    canvas.drawPath(path, paint);
   }
+
+  @override
+  bool shouldRepaint(_CornerPainter old) =>
+      old.color != color || old.strokeWidth != strokeWidth;
 }

@@ -11,9 +11,11 @@ MealSnap+ is a Flutter application built with a modern Material 3 design system.
 ## Build Targets & Issues
 
 ### ⚠️ Linux Build Issue
+
 The Flutter snap installation lacks the required linker tools (`ld`/`ld.lld`). To resolve this:
 
 **Option 1: Install Flutter from Source (Recommended)**
+
 ```bash
 # Remove snap version
 sudo snap remove flutter

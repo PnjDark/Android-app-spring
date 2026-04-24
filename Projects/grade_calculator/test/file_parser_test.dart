@@ -1,6 +1,6 @@
 import 'package:test/test.dart';
 import 'dart:io';
-import '../lib/io/file_parser.dart';
+import 'package:grade_calculator/io/file_parser.dart';
 
 void main() {
   test('parse CSV with sample data', () async {

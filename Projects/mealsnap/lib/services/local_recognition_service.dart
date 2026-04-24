@@ -1,129 +1,117 @@
 import 'dart:io';
+import 'dart:typed_data';
 
-import 'package:google_mlkit_image_labeling/google_mlkit_image_labeling.dart';
+import 'package:flutter/services.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:image/image.dart' as img;
+import 'package:tflite_flutter/tflite_flutter.dart';
+
+/// Raw result from the local model -- used as a fast pre-pass before Gemini.
+class LocalLabelResult {
+  final List<Map<String, dynamic>> foodLabels;
+  final List<Map<String, dynamic>> allLabels;
+
+  const LocalLabelResult({
+    required this.foodLabels,
+    required this.allLabels,
+  });
+}
 
 class LocalRecognitionService {
-  final ImageLabeler _imageLabeler;
-  final TextRecognizer _textRecognizer;
+  Interpreter? _interpreter;
+  List<String>? _labels;
+  late final TextRecognizer _textRecognizer;
 
-  LocalRecognitionService({double confidenceThreshold = 0.5})
-      : _imageLabeler = ImageLabeler(
-          options: ImageLabelerOptions(confidenceThreshold: confidenceThreshold),
-        ),
-        _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
-
-  Future<Map<String, dynamic>> recognizeFoodImage(
-    File imageFile, {
-    required bool ingredientsMode,
-  }) async {
-    final inputImage = InputImage.fromFilePath(imageFile.path);
-    final labels = await _imageLabeler.processImage(inputImage);
-
-    final labelData = labels.map((label) {
-      return <String, Object?>{
-        'label': label.label,
-        'confidence': label.confidence,
-        'index': label.index,
-      };
-    }).toList();
-
-    final filtered = labelData.where((item) {
-      final label = (item['label'] as String).toLowerCase();
-      return _isFoodLabel(label);
-    }).toList();
-
-    final selectedLabels = filtered.isNotEmpty
-        ? filtered
-        : labelData.take(6).toList();
-
-    return {
-      'mode': ingredientsMode ? 'ingredients' : 'meal',
-      'labels': selectedLabels,
-      'raw_labels': labelData,
-    };
+  LocalRecognitionService() {
+    _loadModel();
+    _textRecognizer = TextRecognizer(
+      script: TextRecognitionScript.latin,
+    );
   }
 
-  Future<Map<String, dynamic>> recognizeReceiptImage(File imageFile) async {
-    final inputImage = InputImage.fromFilePath(imageFile.path);
-    final recognizedText = await _textRecognizer.processImage(inputImage);
+  LocalRecognitionService.test(this._interpreter) {
+    _loadLabels();
+    _textRecognizer = TextRecognizer(
+      script: TextRecognitionScript.latin,
+    );
+  }
 
-    final lines = recognizedText.blocks
-        .expand((block) => block.lines)
-        .map((line) => line.text.trim())
-        .where((line) => line.isNotEmpty)
-        .toList();
+  Future<void> _loadModel() async {
+    try {
+      _loadLabels();
+      _interpreter = await Interpreter.fromAsset('assets/ai/food_classifier.tflite');
+    } catch (e) {
+      print("Error loading model: $e");
+    }
+  }
 
-    final items = <Map<String, Object>>[];
-    String? total;
-    final itemPattern = RegExp(r'^(.+?)\s+\$?([0-9]+(?:\.[0-9]{1,2})?)$');
-    final totalPattern = RegExp(r'total[:\s]*\$?([0-9]+(?:\.[0-9]{1,2})?)', caseSensitive: false);
+  Future<void> _loadLabels() async {
+      final labelsData = await rootBundle.loadString('assets/ai/food_labels.txt');
+      _labels = labelsData.split('\n');
+  }
 
-    for (final line in lines) {
-      final lower = line.toLowerCase();
-      final totalMatch = totalPattern.firstMatch(lower);
-      if (totalMatch != null) {
-        total = totalMatch.group(1)?.trim();
-      }
+  Future<LocalLabelResult> recognizeFoodImage(File imageFile) async {
+    if (_interpreter == null || _labels == null) {
+      return const LocalLabelResult(foodLabels: [], allLabels: []);
+    }
 
-      final itemMatch = itemPattern.firstMatch(line);
-      if (itemMatch != null) {
-        final name = itemMatch.group(1)?.trim() ?? '';
-        final price = double.tryParse(itemMatch.group(2) ?? '0') ?? 0.0;
-        items.add({'name': name, 'price': price});
+    final imageBytes = await imageFile.readAsBytes();
+    final originalImage = img.decodeImage(imageBytes);
+    if (originalImage == null) {
+      return const LocalLabelResult(foodLabels: [], allLabels: []);
+    }
+
+    // Resize the image to the model's input size
+    final inputImage = img.copyResize(originalImage, width: 224, height: 224);
+
+    // Convert the image to a byte buffer
+    final input = _imageToByteList(inputImage);
+
+    // Define the output
+    var output = List.filled(1 * _labels!.length, 0.0).reshape([1, _labels!.length]);
+
+    // Run inference
+    _interpreter!.run(input, output);
+
+    // Process the output
+    final results = output[0] as List<double>;
+    final List<Map<String, dynamic>> all = [];
+    for (var i = 0; i < results.length; i++) {
+      if (results[i] > 0.1) { // Confidence threshold
+        all.add({
+          'label': _labels![i],
+          'confidence': results[i],
+        });
       }
     }
 
-    return {
-      'mode': 'receipt',
-      'items': items,
-      'total': total,
-      'raw_text': recognizedText.text,
-      'lines': lines,
-    };
+    all.sort((a, b) => (b['confidence'] as double).compareTo(a['confidence'] as double));
+
+    return LocalLabelResult(foodLabels: all.take(5).toList(), allLabels: all);
   }
 
-  bool _isFoodLabel(String label) {
-    const foodKeywords = [
-      // Common Western foods
-      'apple', 'banana', 'bread', 'cheese', 'chicken', 'pizza', 'burger',
-      'salad', 'soup', 'rice', 'pasta', 'egg', 'fish', 'steak', 'sandwich',
-      'sushi', 'coffee', 'cake', 'pancake', 'fruit', 'vegetable', 'meat',
-      'tomato', 'onion', 'potato', 'carrot', 'lettuce', 'curry', 'noodle',
-      'waffle', 'donut', 'beans', 'taco',
+  ByteBuffer _imageToByteList(img.Image image) {
+    var buffer = ByteData(1 * 224 * 224 * 3);
+    var bufferIndex = 0;
+    for (var y = 0; y < 224; y++) {
+      for (var x = 0; x < 224; x++) {
+        var pixel = image.getPixel(x, y);
+        buffer.setUint8(bufferIndex++, pixel.r.toInt());
+        buffer.setUint8(bufferIndex++, pixel.g.toInt());
+        buffer.setUint8(bufferIndex++, pixel.b.toInt());
+      }
+    }
+    return buffer.buffer;
+  }
 
-      // African dishes and ingredients
-      'jollof', 'rice', 'ndole', 'eru', 'fufu', 'plantain', 'egusi', 'soup',
-      'palm', 'oil', 'cassava', 'yam', 'cocoyam', 'gari', 'eba', 'pounded',
-      'akara', 'moi', 'moi', 'moi', 'chin', 'chin', 'chin', 'suya', 'kilishi',
-      'puff', 'puff', 'meat', 'pie', 'roti', 'chapati', 'ugali', 'nsima',
-      'sadza', 'banku', 'kenkey', 'waakye', 'jute', 'leaves', 'bitter', 'leaf',
-      'okra', 'soup', 'groundnut', 'soup', 'peanut', 'stew', 'maize', 'corn',
-      'millet', 'sorghum', 'teff', 'injera', 'tibs', 'doro', 'wat', 'lentils',
-      'chickpeas', 'peas', 'beans', 'okra', 'tomatoes', 'peppers', 'onions',
-      'garlic', 'ginger', 'cumin', 'coriander', 'cardamom', 'cloves', 'turmeric',
-      'curry', 'powder', 'berbere', 'mitmita', 'niter', 'kibe', 'goat', 'lamb',
-      'beef', 'chicken', 'fish', 'tilapia', 'catfish', 'shrimp', 'lobster',
-      'coconut', 'mango', 'pineapple', 'banana', 'orange', 'lemon', 'lime',
-      'avocado', 'pawpaw', 'papaya', 'guava', 'passion', 'fruit', 'cashew',
-      'peanut', 'groundnut', 'sesame', 'flaxseed', 'chia', 'quinoa', 'amaranth',
-      'fonio', 'millet', 'sorghum', 'teff', 'wheat', 'barley', 'oats', 'rye',
-      'corn', 'maize', 'cassava', 'yam', 'sweet', 'potato', 'taro', 'cocoyam',
-      'plantain', 'banana', 'breadfruit', 'jackfruit', 'durian', 'rambutan',
-      'lychee', 'longan', 'mangosteen', 'salak', 'snake', 'fruit', 'dragon',
-      'fruit', 'starfruit', 'carambola', 'tamarind', 'baobab', 'hibiscus',
-      'kola', 'nut', 'alligator', 'pepper', 'grains', 'of', 'paradise',
-      'african', 'potash', 'potassium', 'bicarbonate', 'baking', 'soda',
-      'palm', 'wine', 'sorghum', 'beer', 'pito', 'burukutu', 'ogogoro',
-      'akpeteshie', 'local', 'gin', 'kunu', 'zobo', 'sobolo', 'bissap',
-      'ginger', 'beer', 'malt', 'drink', 'fanta', 'coke', 'pepsi', 'sprite',
-      'mineral', 'water', 'pure', 'water', 'bottled', 'water', 'sachet', 'water',
-    ];
-    return foodKeywords.any((keyword) => label.toLowerCase().contains(keyword));
+  Future<String> recognizeReceiptText(File imageFile) async {
+    final input = InputImage.fromFilePath(imageFile.path);
+    final result = await _textRecognizer.processImage(input);
+    return result.text;
   }
 
   Future<void> dispose() async {
-    _imageLabeler.close();
+    _interpreter?.close();
     _textRecognizer.close();
   }
 }

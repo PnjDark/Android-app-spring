@@ -1,10 +1,16 @@
-# Flutter Build Fix TODO
+# Flutter Mealsnap Debugging TODO
 
-## Planned Steps:
-- [x] 1. Fix main.dart InkWell missing closing parenthesis
-- [x] 2. Fix scan_screen.dart speech recognition type  
-- [x] 3. Fix analytics_screen.dart PDF import
-- [ ] 4. Test `flutter build apk --split-per-abi`
-- [ ] 5. Complete
+## Completed
+- [x] Plan approved for main.dart brace fix and Symbols handling
 
-Current progress: All code fixes complete. Testing build next...
+## In Progress
+1. **Read and surgically fix main.dart** - Remove broken NavigationDestination block (~lines 746+), uncomment Symbols import
+2. Run `cd Projects/mealsnap && flutter analyze` to verify syntax
+3. Fix const constructor errors (LoginScreen, ScanScreen) - remove invalid 'const'
+4. Replace remaining Symbols.* across screens with Icons.*
+5. Add missing imports/definitions for ScanScreen, ScanMode enum
+6. `flutter pub get && flutter run` full test
+
+## Pending
+- Global Icons migration if Symbols package issues persist
+- Full build/test APK

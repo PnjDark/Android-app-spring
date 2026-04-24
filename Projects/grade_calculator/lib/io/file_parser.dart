@@ -32,7 +32,7 @@ class FileParser {
     final sheetNames = excel.sheets.keys.toList();
     if (sheetNames.contains('Students')) {
       _parseStudentSheet(excel.tables['Students']!, students);
-    } else if (sheetNames.length > 0) {
+    } else if (sheetNames.isNotEmpty) {
       _parseStudentSheet(excel.tables[sheetNames[0]]!, students);
     }
 
