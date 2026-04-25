@@ -1,10 +1,9 @@
-import 'dart:io';
-
 import 'package:camera/camera.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 
 import '../firebase_config.dart';
 import '../models.dart';
@@ -22,6 +21,7 @@ class ScanScreen extends StatefulWidget {
   final List<CameraDescription>? cameras;
   final LocalRecognitionService? localRecognitionService;
   final GeminiService? geminiService;
+  final CameraController? controller;
 
   const ScanScreen({
     super.key,
@@ -29,6 +29,7 @@ class ScanScreen extends StatefulWidget {
     this.cameras,
     this.localRecognitionService,
     this.geminiService,
+    this.controller,
   });
 
   @override
@@ -78,12 +79,19 @@ class _ScanScreenState extends State<ScanScreen>
       CurvedAnimation(parent: _scanLineAnim, curve: Curves.easeInOut),
     );
 
-    _initCamera();
+    if (widget.controller != null) {
+      _cameraController = widget.controller;
+      _cameraReady = _cameraController!.initialize();
+    } else {
+      _initCamera();
+    }
   }
 
   @override
   void dispose() {
-    _cameraController?.dispose();
+    if (widget.controller == null) {
+      _cameraController?.dispose();
+    }
     _localService.dispose();
     _scanLineAnim.dispose();
     super.dispose();
@@ -229,7 +237,7 @@ class _ScanScreenState extends State<ScanScreen>
   Future<void> _processReceipt(File image) async {
     // Step 1 -- OCR text via ML Kit.
     setState(() => _statusText = 'Reading receipt text...');
-    final rawText = await _localService.recognizeReceiptText(image);
+    await _localService.recognizeReceiptText(image);
 
     // Step 2 -- Gemini parses the OCR text into structured data.
     setState(() => _statusText = 'Parsing receipt with AI...');
@@ -412,10 +420,10 @@ class _ScanScreenState extends State<ScanScreen>
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              Colors.black.withValues(alpha: 0.35),
+              Colors.black.withOpacity(0.35),
               Colors.transparent,
               Colors.transparent,
-              Colors.black.withValues(alpha: 0.55),
+              Colors.black.withOpacity(0.55),
             ],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
@@ -441,7 +449,7 @@ class _ScanScreenState extends State<ScanScreen>
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(28),
                 border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.3), width: 1.5),
+                    color: Colors.white.withOpacity(0.3), width: 1.5),
               ),
             ),
 
@@ -595,7 +603,7 @@ class _ScanScreenState extends State<ScanScreen>
           Container(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.45),
+              color: Colors.black.withOpacity(0.45),
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(32)),
             ),
@@ -626,9 +634,9 @@ class _ScanScreenState extends State<ScanScreen>
       margin: const EdgeInsets.symmetric(horizontal: 20),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.6),
+        color: Colors.black.withOpacity(0.6),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
       ),
       child: _isAnalyzing
           ? _buildAnalyzingContent()
@@ -732,7 +740,7 @@ class _CircleBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.black.withValues(alpha: 0.45),
+      color: Colors.black.withOpacity(0.45),
       shape: const CircleBorder(),
       child: InkWell(
         customBorder: const CircleBorder(),
@@ -755,7 +763,7 @@ class _IngredientTag extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D631B).withValues(alpha: 0.85),
+        color: const Color(0xFF0D631B).withOpacity(0.85),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(label,
@@ -808,13 +816,13 @@ class _ModeChip extends StatelessWidget {
             const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: selected
-              ? Colors.white.withValues(alpha: 0.22)
-              : Colors.white.withValues(alpha: 0.07),
+              ? Colors.white.withOpacity(0.22)
+              : Colors.white.withOpacity(0.07),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
             color: selected
                 ? const Color(0xFFA3F69C)
-                : Colors.white.withValues(alpha: 0.1),
+                : Colors.white.withOpacity(0.1),
           ),
         ),
         child: Row(
@@ -864,7 +872,7 @@ class _ShutterButton extends StatelessWidget {
               color: (isAnalyzing
                       ? Colors.grey
                       : const Color(0xFF0D631B))
-                  .withValues(alpha: 0.4),
+                  .withOpacity(0.4),
               blurRadius: 20,
               spreadRadius: 2,
             )
@@ -901,7 +909,7 @@ class _BottomControl extends StatelessWidget {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.1),
+              color: Colors.white.withOpacity(0.1),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Icon(icon, color: Colors.white, size: 22),
