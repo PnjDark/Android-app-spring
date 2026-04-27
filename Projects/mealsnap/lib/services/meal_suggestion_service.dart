@@ -1,4 +1,4 @@
-import '../models.dart';
+import '../models/firebase_models.dart';
 
 class MealSuggestion {
   final String name;

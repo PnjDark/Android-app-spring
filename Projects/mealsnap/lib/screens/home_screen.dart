@@ -1,88 +1,38 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../core/app_theme.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../models/firebase_models.dart';
+import '../services/firestore_service.dart';
 
+// ---------------------------------------------------------------------------
 // Data Models
+// ---------------------------------------------------------------------------
+
 class NutritionData {
-  final double calories;
-  final double maxCalories;
-  final double protein;
-  final double maxProtein;
-  final double carbs;
-  final double maxCarbs;
-  final double fats;
-  final double maxFats;
+  final double calories, maxCalories;
+  final double protein, maxProtein;
+  final double carbs, maxCarbs;
+  final double fats, maxFats;
 
-  NutritionData({
-    required this.calories,
-    required this.maxCalories,
-    required this.protein,
-    required this.maxProtein,
-    required this.carbs,
-    required this.maxCarbs,
-    required this.fats,
-    required this.maxFats,
+  const NutritionData({
+    required this.calories, required this.maxCalories,
+    required this.protein, required this.maxProtein,
+    required this.carbs, required this.maxCarbs,
+    required this.fats, required this.maxFats,
   });
 
-  factory NutritionData.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
-    return NutritionData(
-      calories: (data['calories'] ?? 0).toDouble(),
-      maxCalories: (data['maxCalories'] ?? 0).toDouble(),
-      protein: (data['protein'] ?? 0).toDouble(),
-      maxProtein: (data['maxProtein'] ?? 0).toDouble(),
-      carbs: (data['carbs'] ?? 0).toDouble(),
-      maxCarbs: (data['maxCarbs'] ?? 0).toDouble(),
-      fats: (data['fats'] ?? 0).toDouble(),
-      maxFats: (data['maxFats'] ?? 0).toDouble(),
-    );
-  }
+  static NutritionData get placeholder => const NutritionData(
+    calories: 0, maxCalories: 2200,
+    protein: 0, maxProtein: 120,
+    carbs: 0, maxCarbs: 250,
+    fats: 0, maxFats: 70,
+  );
 }
 
-class Meal {
-  final String name;
-  final String tag;
-  final String imageUrl;
-
-  Meal({required this.name, required this.tag, required this.imageUrl});
-
-  factory Meal.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
-    return Meal(
-      name: data['name'] ?? '',
-      tag: data['tag'] ?? '',
-      imageUrl: data['imageUrl'] ?? '',
-    );
-  }
-}
-
-class Activity {
-  final String title;
-  final String subtitle;
-  final String trailing;
-  final String icon;
-  final String color;
-
-  Activity({
-    required this.title,
-    required this.subtitle,
-    required this.trailing,
-    required this.icon,
-    required this.color,
-  });
-
-  factory Activity.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
-    return Activity(
-      title: data['title'] ?? '',
-      subtitle: data['subtitle'] ?? '',
-      trailing: data['trailing'] ?? '',
-      icon: data['icon'] ?? '',
-      color: data['color'] ?? '',
-    );
-  }
-}
+// ---------------------------------------------------------------------------
+// HomeScreen
+// ---------------------------------------------------------------------------
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -92,38 +42,92 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late Future<NutritionData> _nutritionFuture;
-  late Future<Meal> _mealFuture;
-  late Future<List<Activity>> _activitiesFuture;
+  final _service = FirestoreService();
+
+  NutritionData _nutrition = NutritionData.placeholder;
+  List<MealModel> _recentMeals = [];
+  bool _nutritionLoading = true;
+  bool _mealsLoading = true;
+
+  String get _todayKey {
+    final n = DateTime.now();
+    return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
+  }
+
+  String get _greeting {
+    final h = DateTime.now().hour;
+    if (h < 12) return 'GOOD MORNING';
+    if (h < 17) return 'GOOD AFTERNOON';
+    return 'GOOD EVENING';
+  }
+
+  String get _userName {
+    final u = FirebaseAuth.instance.currentUser;
+    if (u?.displayName?.isNotEmpty == true) return u!.displayName!;
+    if (u?.email?.isNotEmpty == true) return u!.email!.split('@').first;
+    return 'Chef';
+  }
 
   @override
   void initState() {
     super.initState();
-    _nutritionFuture = _fetchNutritionData();
-    _mealFuture = _fetchSuggestedMeal();
-    _activitiesFuture = _fetchRecentActivities();
+    _loadNutrition();
+    _loadRecentMeals();
   }
 
-  Future<NutritionData> _fetchNutritionData() async {
-    final doc = await FirebaseFirestore.instance
-        .collection('nutrition')
-        .doc('dailyProgress')
-        .get();
-    return NutritionData.fromFirestore(doc);
+  Future<void> _loadNutrition() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      if (mounted) setState(() => _nutritionLoading = false);
+      return;
+    }
+    try {
+      final results = await Future.wait([
+        _service.getDailyStats(uid, _todayKey),
+        _service.getUser(uid),
+      ]).timeout(const Duration(seconds: 8));
+
+      final stats = results[0] as DailyStatsModel?;
+      final user = results[1] as UserModel?;
+      final goal = user?.settings.dailyCalorieGoal.toDouble() ?? 2200;
+
+      if (mounted && stats != null) {
+        setState(() {
+          _nutrition = NutritionData(
+            calories: stats.totalCalories,
+            maxCalories: goal,
+            protein: stats.protein,
+            maxProtein: 120,
+            carbs: stats.carbs,
+            maxCarbs: 250,
+            fats: stats.fats,
+            maxFats: 70,
+          );
+        });
+      }
+    } catch (_) {
+      // Keep placeholder
+    } finally {
+      if (mounted) setState(() => _nutritionLoading = false);
+    }
   }
 
-  Future<Meal> _fetchSuggestedMeal() async {
-    final doc = await FirebaseFirestore.instance
-        .collection('meals')
-        .doc('suggested')
-        .get();
-    return Meal.fromFirestore(doc);
-  }
-
-  Future<List<Activity>> _fetchRecentActivities() async {
-    final snapshot =
-        await FirebaseFirestore.instance.collection('activities').get();
-    return snapshot.docs.map((doc) => Activity.fromFirestore(doc)).toList();
+  Future<void> _loadRecentMeals() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      if (mounted) setState(() => _mealsLoading = false);
+      return;
+    }
+    try {
+      final meals = await _service
+          .getRecentMeals(uid, limit: 5)
+          .timeout(const Duration(seconds: 8));
+      if (mounted) setState(() => _recentMeals = meals);
+    } catch (_) {
+      // Leave empty
+    } finally {
+      if (mounted) setState(() => _mealsLoading = false);
+    }
   }
 
   @override
@@ -132,104 +136,79 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Row(
-          children: [
-            const Icon(Symbols.restaurant, color: AppTheme.primary),
-            const SizedBox(width: 8),
-            Text(
-              'MealSnap+',
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    color: AppTheme.primary,
-                    letterSpacing: -1,
-                  ),
-            ),
-          ],
-        ),
+        title: Row(children: [
+          const Icon(Symbols.restaurant, color: AppTheme.primary),
+          const SizedBox(width: 8),
+          Text(
+            'MealSnap+',
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  color: AppTheme.primary,
+                  letterSpacing: -1,
+                ),
+          ),
+        ]),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 16),
             child: CircleAvatar(
               radius: 20,
-              backgroundColor: AppTheme.primary.withOpacity(0.1),
-              backgroundImage: const NetworkImage(
-                  'https://lh3.googleusercontent.com/aida-public/AB6AXuARA7Sofpa2ibcYYmFFe7qQY54II-5dG5r3FD3C-J-N-j4SJCuztVV9fgxprfkqMkaH0uKgI7SOXkK7ujHENu_z1f2NduRnPUdaIYVAGpNZ3thpS7KuoeSDu_tOWQt_N7BNb_VVQL-G3PpR6EpIPFVzhkqb4rD4HA_nqOIm94BK1zK9hmWIqN8ILkVjcczLyJ3RofZ9OYALoVy3J968yiliB-WqavpwIyLya7xGn_c3wzc859YwPso-jrz5Su_iQ1125UMyWkqtLCgb'),
+              backgroundColor: AppTheme.primary.withValues(alpha: 0.15),
+              child: Text(
+                _userName.isNotEmpty ? _userName[0].toUpperCase() : 'M',
+                style: const TextStyle(
+                    color: AppTheme.primary, fontWeight: FontWeight.bold),
+              ),
             ),
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'GOOD MORNING',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: AppTheme.outline,
-                    fontSize: 12,
-                    letterSpacing: 2,
-                  ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Hello, Sarah!',
-              style: Theme.of(context).textTheme.headlineLarge,
-            ),
-            const SizedBox(height: 32),
-            FutureBuilder<NutritionData>(
-              future: _nutritionFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                } else if (snapshot.hasError) {
-                  return const Center(child: Text('Error fetching data'));
-                } else if (snapshot.hasData) {
-                  return _buildNutritionProgress(context, snapshot.data!);
-                } else {
-                  return const Center(child: Text('No data available'));
-                }
-              },
-            ),
-            const SizedBox(height: 32),
-            _buildActionButtons(context),
-            const SizedBox(height: 32),
-            FutureBuilder<Meal>(
-              future: _mealFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                } else if (snapshot.hasError) {
-                  return const Center(child: Text('Error fetching data'));
-                } else if (snapshot.hasData) {
-                  return _buildSuggestedMeal(context, snapshot.data!);
-                } else {
-                  return const Center(child: Text('No data available'));
-                }
-              },
-            ),
-            const SizedBox(height: 32),
-            FutureBuilder<List<Activity>>(
-              future: _activitiesFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                } else if (snapshot.hasError) {
-                  return const Center(child: Text('Error fetching data'));
-                } else if (snapshot.hasData) {
-                  return _buildRecentActivity(context, snapshot.data!);
-                } else {
-                  return const Center(child: Text('No data available'));
-                }
-              },
-            ),
-            const SizedBox(height: 100),
-          ],
+      body: RefreshIndicator(
+        onRefresh: () async {
+          setState(() {
+            _nutritionLoading = true;
+            _mealsLoading = true;
+          });
+          await Future.wait([_loadNutrition(), _loadRecentMeals()]);
+        },
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _greeting,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: AppTheme.outline,
+                      fontSize: 12,
+                      letterSpacing: 2,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Hello, $_userName!',
+                style: Theme.of(context).textTheme.headlineLarge,
+              ),
+              const SizedBox(height: 32),
+              _buildNutritionProgress(context, _nutrition, _nutritionLoading),
+              const SizedBox(height: 32),
+              _buildActionButtons(context),
+              const SizedBox(height: 32),
+              _buildRecentActivity(context, _recentMeals, _mealsLoading),
+              const SizedBox(height: 100),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildNutritionProgress(BuildContext context, NutritionData nutrition) {
+  // -------------------------------------------------------------------------
+  // Nutrition card
+  // -------------------------------------------------------------------------
+
+  Widget _buildNutritionProgress(
+      BuildContext context, NutritionData n, bool loading) {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -237,148 +216,130 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 20,
             offset: const Offset(0, 10),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Daily Nutrition Progress',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              _buildCircularProgress(context, nutrition),
-              const SizedBox(width: 32),
-              Expanded(
-                child: Column(
-                  children: [
-                    _buildProgressBar(context, 'Protein', '${nutrition.protein}g / ${nutrition.maxProtein}g', nutrition.protein / nutrition.maxProtein, AppTheme.primary),
-                    const SizedBox(height: 16),
-                    _buildProgressBar(context, 'Carbs', '${nutrition.carbs}g / ${nutrition.maxCarbs}g', nutrition.carbs / nutrition.maxCarbs, AppTheme.secondaryContainer),
-                    const SizedBox(height: 16),
-                    _buildProgressBar(context, 'Fats', '${nutrition.fats}g / ${nutrition.maxFats}g', nutrition.fats / nutrition.maxFats, AppTheme.tertiaryContainer),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCircularProgress(BuildContext context, NutritionData nutrition) {
-    return SizedBox(
-      width: 120,
-      height: 120,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          SizedBox(
-            width: 120,
-            height: 120,
-            child: CircularProgressIndicator(
-              value: nutrition.calories / nutrition.maxCalories,
-              strokeWidth: 12,
-              backgroundColor: AppTheme.surfaceContainerLow,
-              valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primary),
-              strokeCap: StrokeCap.round,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Text('Daily Nutrition Progress',
+              style: Theme.of(context).textTheme.titleLarge),
+          if (loading)
+            const SizedBox(
+              width: 16, height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
             ),
+        ]),
+        const SizedBox(height: 24),
+        Row(children: [
+          _buildCircularProgress(context, n),
+          const SizedBox(width: 32),
+          Expanded(
+            child: Column(children: [
+              _buildProgressBar(context, 'Protein',
+                  '${n.protein.toInt()}g / ${n.maxProtein.toInt()}g',
+                  n.maxProtein > 0 ? n.protein / n.maxProtein : 0,
+                  AppTheme.primary),
+              const SizedBox(height: 16),
+              _buildProgressBar(context, 'Carbs',
+                  '${n.carbs.toInt()}g / ${n.maxCarbs.toInt()}g',
+                  n.maxCarbs > 0 ? n.carbs / n.maxCarbs : 0,
+                  AppTheme.secondaryContainer),
+              const SizedBox(height: 16),
+              _buildProgressBar(context, 'Fats',
+                  '${n.fats.toInt()}g / ${n.maxFats.toInt()}g',
+                  n.maxFats > 0 ? n.fats / n.maxFats : 0,
+                  AppTheme.tertiaryContainer),
+            ]),
           ),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '${nutrition.calories.toInt()}',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-              Text(
-                '/ ${nutrition.maxCalories.toInt()} KCAL',
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      fontSize: 10,
-                      color: AppTheme.outline,
-                    ),
-              ),
-            ],
-          ),
-        ],
-      ),
+        ]),
+      ]),
     );
   }
 
-  Widget _buildProgressBar(BuildContext context, String label, String value, double progress, Color color) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-            Text(value, style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        const SizedBox(height: 6),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: LinearProgressIndicator(
-            value: progress,
-            minHeight: 8,
+  Widget _buildCircularProgress(BuildContext context, NutritionData n) {
+    final ratio = n.maxCalories > 0 ? n.calories / n.maxCalories : 0.0;
+    return SizedBox(
+      width: 120, height: 120,
+      child: Stack(alignment: Alignment.center, children: [
+        SizedBox(
+          width: 120, height: 120,
+          child: CircularProgressIndicator(
+            value: ratio.clamp(0, 1),
+            strokeWidth: 12,
             backgroundColor: AppTheme.surfaceContainerLow,
-            valueColor: AlwaysStoppedAnimation<Color>(color),
+            valueColor:
+                const AlwaysStoppedAnimation<Color>(AppTheme.primary),
+            strokeCap: StrokeCap.round,
           ),
         ),
-      ],
+        Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('${n.calories.toInt()}',
+              style: Theme.of(context).textTheme.headlineMedium),
+          Text('/ ${n.maxCalories.toInt()} KCAL',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    fontSize: 10, color: AppTheme.outline)),
+        ]),
+      ]),
     );
   }
+
+  Widget _buildProgressBar(BuildContext context, String label, String value,
+      double progress, Color color) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Text(label,
+            style: const TextStyle(
+                fontSize: 12, fontWeight: FontWeight.w600)),
+        Text(value,
+            style: TextStyle(
+                fontSize: 12, color: color, fontWeight: FontWeight.bold)),
+      ]),
+      const SizedBox(height: 6),
+      ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: LinearProgressIndicator(
+          value: progress.clamp(0, 1),
+          minHeight: 8,
+          backgroundColor: AppTheme.surfaceContainerLow,
+          valueColor: AlwaysStoppedAnimation<Color>(color),
+        ),
+      ),
+    ]);
+  }
+
+  // -------------------------------------------------------------------------
+  // Action buttons
+  // -------------------------------------------------------------------------
 
   Widget _buildActionButtons(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildActionButton(
-            context,
-            'Scan Meal',
-            Symbols.center_focus_strong,
-            AppTheme.primary,
-            Colors.white,
-            true,
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: _buildActionButton(
-            context,
-            'Check Ingredients',
-            Symbols.fact_check,
-            AppTheme.surfaceContainerLowest,
-            AppTheme.onSurface,
-            false,
-          ),
-        ),
-      ],
-    );
+    return Row(children: [
+      Expanded(
+        child: _buildActionButton(context, 'Scan Meal',
+            Symbols.center_focus_strong, AppTheme.primary, Colors.white, true),
+      ),
+      const SizedBox(width: 16),
+      Expanded(
+        child: _buildActionButton(context, 'Ingredients',
+            Symbols.fact_check, AppTheme.surfaceContainerLowest,
+            AppTheme.onSurface, false),
+      ),
+    ]);
   }
 
-  Widget _buildActionButton(BuildContext context, String label, IconData icon, Color bg, Color text, bool hasShadow) {
+  Widget _buildActionButton(BuildContext context, String label, IconData icon,
+      Color bg, Color text, bool hasShadow) {
     return Container(
       height: 140,
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(24),
         boxShadow: hasShadow
-            ? [
-                BoxShadow(
-                  color: bg.withOpacity(0.2),
-                  blurRadius: 15,
-                  offset: const Offset(0, 8),
-                ),
-              ]
+            ? [BoxShadow(
+                color: bg.withValues(alpha: 0.2),
+                blurRadius: 15, offset: const Offset(0, 8))]
             : null,
       ),
       child: Material(
@@ -392,16 +353,15 @@ class _HomeScreenState extends State<HomeScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: text.withOpacity(0.1),
+                  color: text.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(icon, color: text, size: 32),
               ),
               const SizedBox(height: 12),
-              Text(
-                label,
-                style: TextStyle(color: text, fontWeight: FontWeight.bold, fontSize: 14),
-              ),
+              Text(label,
+                  style: TextStyle(
+                      color: text, fontWeight: FontWeight.bold, fontSize: 14)),
             ],
           ),
         ),
@@ -409,158 +369,90 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildSuggestedMeal(BuildContext context, Meal meal) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Suggested for Lunch', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 16),
+  // -------------------------------------------------------------------------
+  // Recent activity — now driven by real MealModel list
+  // -------------------------------------------------------------------------
+
+  Widget _buildRecentActivity(
+      BuildContext context, List<MealModel> meals, bool loading) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Text('Recent Activity',
+            style: Theme.of(context).textTheme.titleLarge),
+        if (loading)
+          const SizedBox(
+            width: 16, height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        else
+          TextButton(
+            onPressed: () {},
+            child: const Text('View All',
+                style: TextStyle(
+                    color: AppTheme.primary, fontWeight: FontWeight.bold)),
+          ),
+      ]),
+      const SizedBox(height: 8),
+      if (!loading && meals.isEmpty)
         Container(
-          height: 240,
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
-            image: DecorationImage(
-              image: NetworkImage(meal.imageUrl),
-              fit: BoxFit.cover,
-            ),
+            color: AppTheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(20),
           ),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              gradient: LinearGradient(
-                begin: Alignment.bottomCenter,
-                end: Alignment.topCenter,
-                colors: [Colors.black.withOpacity(0.8), Colors.transparent],
-              ),
-            ),
-            padding: const EdgeInsets.all(24),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFA3F69C),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        meal.tag,
-                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF002204)),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      meal.name,
-                      style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white.withOpacity(0.3)),
-                  ),
-                  child: const Icon(Symbols.chevron_right, color: Colors.white),
-                ),
-              ],
-            ),
+          child: const Center(
+            child: Text('No recent activity yet.\nScan a meal to get started!',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppTheme.outline)),
           ),
-        ),
-      ],
-    );
+        )
+      else
+        ...meals.map((meal) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _buildMealItem(context, meal),
+            )),
+    ]);
   }
 
-  Widget _buildRecentActivity(BuildContext context, List<Activity> activities) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('Recent Activity', style: Theme.of(context).textTheme.titleLarge),
-            TextButton(
-              onPressed: () {},
-              child: const Text('View All', style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        ...activities
-            .map((activity) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _buildActivityItem(
-                    context,
-                    activity.title,
-                    activity.subtitle,
-                    activity.trailing,
-                    _getIconFromString(activity.icon),
-                    _getColorFromString(activity.color),
-                  ),
-                ))
-            .toList(),
-      ],
-    );
-  }
+  Widget _buildMealItem(BuildContext context, MealModel meal) {
+    final hour = meal.timestamp.hour;
+    final timeStr =
+        '${hour % 12 == 0 ? 12 : hour % 12}:${meal.timestamp.minute.toString().padLeft(2, '0')} ${hour < 12 ? 'AM' : 'PM'}';
 
-  Widget _buildActivityItem(BuildContext context, String title, String subtitle, String trailing, IconData icon, Color color) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppTheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color, size: 24),
+      child: Row(children: [
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: AppTheme.primary.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                Text(subtitle, style: TextStyle(color: AppTheme.outline, fontSize: 12)),
-              ],
-            ),
-          ),
-          Text(trailing, style: TextStyle(fontWeight: FontWeight.bold, color: color == AppTheme.primary ? AppTheme.primary : AppTheme.onSurface)),
-        ],
-      ),
+          child: const Icon(Symbols.restaurant,
+              color: AppTheme.primary, size: 24),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(meal.foodName,
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 14),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+            Text(timeStr,
+                style: const TextStyle(
+                    color: AppTheme.outline, fontSize: 12)),
+          ]),
+        ),
+        Text('${meal.calories.toInt()} kcal',
+            style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: AppTheme.primary)),
+      ]),
     );
-  }
-
-  IconData _getIconFromString(String iconString) {
-    switch (iconString) {
-      case 'breakfast_dining':
-        return Symbols.breakfast_dining;
-      case 'receipt_long':
-        return Symbols.receipt_long;
-      default:
-        return Symbols.restaurant;
-    }
-  }
-
-  Color _getColorFromString(String colorString) {
-    switch (colorString) {
-      case 'primary':
-        return AppTheme.primary;
-      case 'tertiary':
-        return AppTheme.tertiary;
-      default:
-        return AppTheme.onSurface;
-    }
   }
 }

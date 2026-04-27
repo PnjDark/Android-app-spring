@@ -1,4 +1,4 @@
-import '../models.dart';
+import '../models/firebase_models.dart';
 
 class NutritionDatabaseService {
   static final Map<String, NutritionInfo> _nutritionData = {

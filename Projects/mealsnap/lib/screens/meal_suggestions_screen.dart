@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../services/meal_suggestion_service.dart';
 
 class MealSuggestionsScreen extends StatefulWidget {
   const MealSuggestionsScreen({super.key});
@@ -13,8 +14,11 @@ class _MealSuggestionsScreenState extends State<MealSuggestionsScreen> {
     'Tomatoes',
     'Onions',
     'Plantain',
-    'Chicken'
+    'Chicken',
   ];
+
+  List<MealSuggestion> get _suggestions =>
+      MealSuggestionService.getSuggestions(_selectedIngredients);
 
   @override
   Widget build(BuildContext context) {
@@ -75,142 +79,44 @@ class _MealSuggestionsScreenState extends State<MealSuggestionsScreen> {
             ),
             const SizedBox(height: 32),
 
-            // Meal Suggestions
-            Column(
-              children: [
-                // Card 1: 95% Match
-                _MealCard(
-                  title: 'Chicken & Plantain Roast',
-                  matchPercentage: 95,
-                  difficulty: 'Easy',
-                  duration: '30 mins',
-                  tag: 'High Protein',
-                  imageIcon: Icons.domain_verification,
-                  matchColor: colorScheme.primary,
-                  onAddMeal: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('✓ Added to meal plan'),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                // Card 2: 88% Match
-                _MealCard(
-                  title: 'Tomato Stew with Fried Plantain',
-                  matchPercentage: 88,
-                  difficulty: 'Beginner',
-                  duration: '20 mins',
-                  tag: 'Vegetarian',
-                  imageIcon: Icons.restaurant,
-                  matchColor: colorScheme.secondary,
-                  onAddMeal: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('✓ Added to meal plan'),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                // Card 3: 60% Match (Disabled)
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Jollof Rice',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: colorScheme.secondary.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                '60% Match',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelSmall
-                                    ?.copyWith(
-                                      color: colorScheme.secondary,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: colorScheme.secondary.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.warning,
-                                color: colorScheme.secondary,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Missing 2 ingredients: Ginger, Rice',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodySmall
-                                      ?.copyWith(
-                                        color: colorScheme.secondary,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: null,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: colorScheme.surfaceContainerHigh,
-                              foregroundColor:
-                                  colorScheme.onSurfaceVariant,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.add_task, size: 18),
-                                SizedBox(width: 8),
-                                Text('Add to Plan (Disabled)'),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+            // Suggestions from service
+            if (_suggestions.isEmpty)
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Text(
+                    'No suggestions match your ingredients.\nTry adding more!',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey[600]),
                   ),
                 ),
-              ],
-            ),
+              )
+            else
+              Column(
+                children: _suggestions.map((s) {
+                  final pct = MealSuggestionService.getSuggestions(
+                          _selectedIngredients)
+                      .indexOf(s);
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: _MealCard(
+                      title: s.name,
+                      matchPercentage: 80 - (pct * 8).clamp(0, 40),
+                      difficulty: s.difficulty,
+                      duration: '${s.cookingTime} mins',
+                      tag: s.nutrition.calories.round().toString() + ' kcal',
+                      imageIcon: Icons.restaurant,
+                      matchColor: Theme.of(context).colorScheme.primary,
+                      onAddMeal: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                              content: Text('✓ ${s.name} added to meal plan')),
+                        );
+                      },
+                    ),
+                  );
+                }).toList(),
+              ),
           ],
         ),
       ),

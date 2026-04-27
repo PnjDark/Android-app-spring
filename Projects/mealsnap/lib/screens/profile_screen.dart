@@ -1,9 +1,24 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../core/app_theme.dart';
+import '../services/auth_service.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
+
+  String get _displayName {
+    final u = FirebaseAuth.instance.currentUser;
+    if (u?.displayName?.isNotEmpty == true) return u!.displayName!;
+    if (u?.email?.isNotEmpty == true) return u!.email!.split('@').first;
+    return 'Chef';
+  }
+
+  String get _email =>
+      FirebaseAuth.instance.currentUser?.email ?? '';
+
+  String get _initial =>
+      _displayName.isNotEmpty ? _displayName[0].toUpperCase() : 'M';
 
   @override
   Widget build(BuildContext context) {
@@ -53,55 +68,26 @@ class ProfileScreen extends StatelessWidget {
   Widget _buildHeroProfile(BuildContext context) {
     return Column(
       children: [
-        Stack(
-          children: [
-            Container(
-              width: 120,
-              height: 120,
-              padding: const EdgeInsets.all(4),
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [AppTheme.primary, AppTheme.secondaryContainer],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              child: Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: AppTheme.surface, width: 4),
-                  image: const DecorationImage(
-                    image: NetworkImage(
-                        'https://lh3.googleusercontent.com/aida-public/AB6AXuCEif0oc34897eYm8Bfy9XXAOG4uFyNaRzUjJIU0QaQOkUkT6N8hrot3IoJfpK7JruAJ9xz48RLIqlV4BhnuE-fEzFnmfKi_BJrHXTX0LG3ST_TtlR0nVsfmagBgQ2hZ4x0rtWwCShOUuiTZnOLtApSpp0V0XOW-qwKP4wCK1zyw1XdO_5RkMmx-MsJWqEKPOWQAipeAOMUmfEVc2Rb6whhK6qCey8CTxT5kCzJ9o8FbbngCjvD18Q5QmYreYIHkhPC6IKsQWASjTsU'),
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              bottom: 4,
-              right: 4,
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: AppTheme.primary,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: AppTheme.surface, width: 2),
-                ),
-                child: const Icon(Symbols.edit, color: Colors.white, size: 14),
-              ),
-            ),
-          ],
+        CircleAvatar(
+          radius: 52,
+          backgroundColor: AppTheme.primary.withValues(alpha: 0.15),
+          child: Text(
+            _initial,
+            style: const TextStyle(
+                fontSize: 40,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.primary),
+          ),
         ),
         const SizedBox(height: 16),
         Text(
-          'Sarah Mitchell',
+          _displayName,
           style: Theme.of(context).textTheme.headlineMedium,
         ),
         Text(
-          'sarah.m@culinarycurator.com',
-          style: TextStyle(color: AppTheme.outline, fontWeight: FontWeight.w500),
+          _email,
+          style: const TextStyle(
+              color: AppTheme.outline, fontWeight: FontWeight.w500),
         ),
       ],
     );
@@ -326,7 +312,10 @@ class ProfileScreen extends StatelessWidget {
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton.icon(
-        onPressed: () {},
+        onPressed: () async {
+          await AuthService.signOut();
+          // GoRouter redirect handles navigation to /login
+        },
         icon: const Icon(Symbols.logout),
         label: const Text('Logout'),
         style: ElevatedButton.styleFrom(

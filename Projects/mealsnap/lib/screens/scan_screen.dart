@@ -1,12 +1,12 @@
 import 'package:camera/camera.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 
 import '../firebase_config.dart';
-import '../models.dart';
+import '../models/firebase_models.dart';
+import '../services/firestore_service.dart';
 import '../services/gemini_service.dart';
 import '../services/local_recognition_service.dart';
 
@@ -266,17 +266,26 @@ class _ScanScreenState extends State<ScanScreen>
       String imagePath, Map<String, dynamic> analysis) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    final entry = MealEntry(
+
+    // Extract structured nutrition from the Gemini result stored in analysis.
+    final gemini = analysis['gemini_analysis'] as Map<String, dynamic>?;
+    final nutrition =
+        gemini != null ? (gemini['nutrition'] as Map<String, dynamic>?) : null;
+
+    final meal = MealModel(
       id: '',
       userId: user.uid,
-      type: _mode.name,
-      description: _resultText,
-      analysis: analysis,
+      foodName: gemini?['meal_name'] as String? ?? 'Unknown Meal',
+      calories: (nutrition?['total_calories'] as num?)?.toDouble() ?? 0,
+      protein: (nutrition?['protein_g'] as num?)?.toDouble() ?? 0,
+      carbs: (nutrition?['carbs_g'] as num?)?.toDouble() ?? 0,
+      fats: (nutrition?['fat_g'] as num?)?.toDouble() ?? 0,
       timestamp: DateTime.now(),
+      source: _mode == ScanMode.receipt ? 'receipt' : 'camera',
+      notes: gemini?['portion_size'] as String?,
     );
-    await FirebaseFirestore.instance
-        .collection('meals')
-        .add(entry.toFirestore());
+
+    await FirestoreService().addMeal(user.uid, meal);
   }
 
   // -- Helpers ------------------------------------------------------------------
