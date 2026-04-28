@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../core/error_widgets.dart';
 import '../../services/auth_service.dart';
 import 'signup_screen.dart';
 
@@ -15,6 +16,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -26,6 +28,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _login() async {
     setState(() {
       _isLoading = true;
+      _errorMessage = null;
     });
 
     try {
@@ -35,18 +38,14 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Login failed: ${e.toString()}')),
-        );
+        setState(() => _errorMessage = friendlyError(e));
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
+
+  String _friendlyError(Object e) => friendlyError(e);
 
   @override
   Widget build(BuildContext context) {
@@ -86,6 +85,15 @@ class _LoginScreenState extends State<LoginScreen> {
                     ?.copyWith(color: colorScheme.onSurfaceVariant),
               ),
               const SizedBox(height: 32),
+
+              // Error banner
+              if (_errorMessage != null) ...[  
+                ErrorBanner(
+                  message: _errorMessage!,
+                  onDismiss: () => setState(() => _errorMessage = null),
+                ),
+                const SizedBox(height: 16),
+              ],
 
               // Email Input
               TextField(

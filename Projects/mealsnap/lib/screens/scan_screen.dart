@@ -47,12 +47,10 @@ class _ScanScreenState extends State<ScanScreen>
   ScanMode _mode = ScanMode.meal;
   bool _isAnalyzing = false;
   String _statusText = '';
-  // Detected label names shown inside the viewfinder overlay.
   List<String> _overlayTags = [];
-  // Final formatted result shown in the bottom panel.
   String _resultText = '';
-  // Whether we have a completed result to show.
   bool _hasResult = false;
+  bool _isOfflineResult = false;
 
   // -- Services -----------------------------------------------------------------
   late final LocalRecognitionService _localService;
@@ -69,7 +67,8 @@ class _ScanScreenState extends State<ScanScreen>
     _statusText = _idleStatus(_mode);
 
     _localService = widget.localRecognitionService ?? LocalRecognitionService();
-    _geminiService = widget.geminiService ?? GeminiService(geminiApiKey);
+    _geminiService = widget.geminiService ??
+        GeminiService.withFallbacks(geminiApiKeys);
 
     _scanLineAnim = AnimationController(
       vsync: this,
@@ -147,7 +146,8 @@ class _ScanScreenState extends State<ScanScreen>
     });
     try {
       final file = await _cameraController!.takePicture();
-      await _processImage(File(file.path));
+      _lastImage = File(file.path);
+      await _processImage(_lastImage!);
     } catch (e) {
       _setError('Capture failed: $e');
     }
@@ -162,13 +162,14 @@ class _ScanScreenState extends State<ScanScreen>
     final picked =
         await ImagePicker().pickImage(source: ImageSource.gallery);
     if (picked == null) return;
+    _lastImage = File(picked.path);
     setState(() {
       _isAnalyzing = true;
       _hasResult = false;
       _overlayTags = [];
       _statusText = 'Loading image...';
     });
-    await _processImage(File(picked.path));
+    await _processImage(_lastImage!);
   }
 
   // -- Core processing pipeline -------------------------------------------------
@@ -198,16 +199,24 @@ class _ScanScreenState extends State<ScanScreen>
       });
     }
 
-    // Step 2 -- Gemini deep analysis.
+    // Step 2 -- Gemini deep analysis with local fallback.
     setState(() => _statusText = 'Analysing with AI...');
-    final MealAnalysisResult geminiResult;
-    if (_mode == ScanMode.ingredients) {
-      geminiResult = await _geminiService.analyzeIngredientsImage(image);
-    } else {
-      geminiResult = await _geminiService.analyzeMealImage(image);
+    MealAnalysisResult geminiResult;
+    bool usedFallback = false;
+    try {
+      if (_mode == ScanMode.ingredients) {
+        geminiResult = await _geminiService.analyzeIngredientsImage(image);
+      } else {
+        geminiResult = await _geminiService.analyzeMealImage(image);
+      }
+    } catch (_) {
+      // Gemini failed -- fall back to local TFLite + nutrition DB.
+      setState(() => _statusText = 'Using offline estimate...');
+      geminiResult = _localService.buildFallbackResult(localResult);
+      usedFallback = true;
     }
 
-    // Step 3 -- update overlay with Gemini's precise ingredient names.
+    // Step 3 -- update overlay tags.
     final smartTags = geminiResult.majorIngredientNames;
     if (mounted) {
       setState(() {
@@ -219,7 +228,7 @@ class _ScanScreenState extends State<ScanScreen>
     final combined = {
       'local_labels': localResult.foodLabels,
       'gemini_analysis': geminiResult.toJson(),
-      'enhanced': true,
+      'enhanced': !usedFallback,
     };
     await _saveToFirestore(image.path, combined);
 
@@ -228,6 +237,7 @@ class _ScanScreenState extends State<ScanScreen>
       setState(() {
         _isAnalyzing = false;
         _hasResult = true;
+        _isOfflineResult = usedFallback;
         _statusText = _idleStatus(_mode);
         _resultText = _formatMealResult(geminiResult);
       });
@@ -290,11 +300,15 @@ class _ScanScreenState extends State<ScanScreen>
 
   // -- Helpers ------------------------------------------------------------------
 
+  // -- Error state -------------------------------------------------------------
+  File? _lastImage; // kept for retry
+
   void _setError(String msg) {
     if (mounted) {
       setState(() {
         _isAnalyzing = false;
         _statusText = msg;
+        _hasResult = false;
       });
     }
   }
@@ -311,6 +325,7 @@ class _ScanScreenState extends State<ScanScreen>
       _statusText = _idleStatus(mode);
       _overlayTags = [];
       _hasResult = false;
+      _isOfflineResult = false;
       _resultText = '';
     });
   }
@@ -639,19 +654,67 @@ class _ScanScreenState extends State<ScanScreen>
   }
 
   Widget _buildStatusCard() {
+    final isError = !_isAnalyzing && !_hasResult &&
+        (_statusText.startsWith('Analysis failed') ||
+            _statusText.startsWith('Capture failed') ||
+            _statusText.startsWith('All Gemini'));
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.6),
+        color: isError
+            ? const Color(0xFF7F1D1D).withOpacity(0.85)
+            : Colors.black.withOpacity(0.6),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
+        border: Border.all(
+          color: isError
+              ? Colors.red.withOpacity(0.4)
+              : Colors.white.withOpacity(0.08),
+        ),
       ),
       child: _isAnalyzing
           ? _buildAnalyzingContent()
           : _hasResult
               ? _buildResultContent()
-              : _buildIdleContent(),
+              : isError
+                  ? _buildErrorContent()
+                  : _buildIdleContent(),
+    );
+  }
+
+  Widget _buildErrorContent() {
+    return Row(
+      children: [
+        const Icon(Icons.error_outline, color: Color(0xFFFCA5A5), size: 18),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            _statusText,
+            style: const TextStyle(color: Color(0xFFFCA5A5), fontSize: 12),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (_lastImage != null)
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _isAnalyzing = true;
+                _hasResult = false;
+                _overlayTags = [];
+                _statusText = 'Retrying...';
+              });
+              _processImage(_lastImage!);
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFFFCA5A5),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('Retry', style: TextStyle(fontSize: 12)),
+          ),
+      ],
     );
   }
 
@@ -703,21 +766,32 @@ class _ScanScreenState extends State<ScanScreen>
       children: [
         Row(
           children: [
-            const Icon(Icons.check_circle_outline,
-                color: Color(0xFFA3F69C), size: 18),
+            Icon(
+              _isOfflineResult ? Icons.wifi_off : Icons.check_circle_outline,
+              color: _isOfflineResult ? const Color(0xFFFBBF24) : const Color(0xFFA3F69C),
+              size: 18,
+            ),
             const SizedBox(width: 8),
-            const Text(
-              'Analysis complete',
+            Text(
+              _isOfflineResult ? 'Offline estimate' : 'Analysis complete',
               style: TextStyle(
-                color: Color(0xFFA3F69C),
+                color: _isOfflineResult ? const Color(0xFFFBBF24) : const Color(0xFFA3F69C),
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
               ),
             ),
+            if (_isOfflineResult) ...([
+              const SizedBox(width: 6),
+              const Tooltip(
+                message: 'AI unavailable — values estimated from local model. Retry when connected.',
+                child: Icon(Icons.info_outline, color: Color(0xFFFBBF24), size: 14),
+              ),
+            ]),
             const Spacer(),
             GestureDetector(
               onTap: () => setState(() {
                 _hasResult = false;
+                _isOfflineResult = false;
                 _resultText = '';
                 _overlayTags = [];
                 _statusText = _idleStatus(_mode);
@@ -729,8 +803,7 @@ class _ScanScreenState extends State<ScanScreen>
         const SizedBox(height: 8),
         Text(
           _resultText,
-          style: const TextStyle(
-              color: Colors.white, fontSize: 12, height: 1.55),
+          style: const TextStyle(color: Colors.white, fontSize: 12, height: 1.55),
         ),
       ],
     );

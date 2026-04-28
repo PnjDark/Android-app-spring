@@ -4,17 +4,38 @@ import 'package:go_router/go_router.dart';
 
 import '../screens/auth/login_screen.dart';
 import '../screens/auth/signup_screen.dart';
+import '../screens/onboarding_screen.dart';
+import '../services/cache_service.dart';
 import 'main_shell.dart';
 
+/// Notifies GoRouter whenever Firebase auth state changes.
+class _AuthNotifier extends ChangeNotifier {
+  _AuthNotifier() {
+    FirebaseAuth.instance.authStateChanges().listen((_) => notifyListeners());
+  }
+}
+
 class AppRouter {
+  static final _authNotifier = _AuthNotifier();
+
   static final router = GoRouter(
     initialLocation: '/',
-    redirect: (context, state) {
+    refreshListenable: _authNotifier,
+    redirect: (context, state) async {
       final loggedIn = FirebaseAuth.instance.currentUser != null;
       final loc = state.matchedLocation;
       final onAuth = loc == '/login' || loc == '/signup';
+      final onOnboarding = loc == '/onboarding';
+
       if (!loggedIn && !onAuth) return '/login';
-      if (loggedIn && onAuth) return '/';
+      if (loggedIn && onAuth) {
+        final done = await CacheService.isOnboardingComplete();
+        return done ? '/' : '/onboarding';
+      }
+      if (loggedIn && !onOnboarding && !onAuth) {
+        final done = await CacheService.isOnboardingComplete();
+        if (!done) return '/onboarding';
+      }
       return null;
     },
     routes: [
@@ -25,6 +46,10 @@ class AppRouter {
       GoRoute(
         path: '/signup',
         builder: (_, __) => const SignUpScreen(),
+      ),
+      GoRoute(
+        path: '/onboarding',
+        builder: (_, __) => const OnboardingScreen(),
       ),
       ShellRoute(
         builder: (context, state, child) => MainShell(child: child),

@@ -4,6 +4,7 @@ import '../core/app_theme.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/firebase_models.dart';
 import '../services/firestore_service.dart';
+import '../services/cache_service.dart';
 
 // ---------------------------------------------------------------------------
 // Data Models
@@ -81,6 +82,28 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) setState(() => _nutritionLoading = false);
       return;
     }
+
+    // Show cached data immediately
+    final cachedStats = await CacheService.loadDailyStats(_todayKey);
+    final cachedSettings = await CacheService.loadUserSettings();
+    if (cachedStats != null && mounted) {
+      final goal = cachedSettings?.dailyCalorieGoal.toDouble() ?? 2200;
+      setState(() {
+        _nutrition = NutritionData(
+          calories: cachedStats.totalCalories,
+          maxCalories: goal,
+          protein: cachedStats.protein,
+          maxProtein: 120,
+          carbs: cachedStats.carbs,
+          maxCarbs: 250,
+          fats: cachedStats.fats,
+          maxFats: 70,
+        );
+        _nutritionLoading = false;
+      });
+    }
+
+    // Revalidate from Firebase in background
     try {
       final results = await Future.wait([
         _service.getDailyStats(uid, _todayKey),
@@ -90,6 +113,9 @@ class _HomeScreenState extends State<HomeScreen> {
       final stats = results[0] as DailyStatsModel?;
       final user = results[1] as UserModel?;
       final goal = user?.settings.dailyCalorieGoal.toDouble() ?? 2200;
+
+      if (stats != null) await CacheService.saveDailyStats(stats);
+      if (user != null) await CacheService.saveUserSettings(user.settings);
 
       if (mounted && stats != null) {
         setState(() {
@@ -106,7 +132,7 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     } catch (_) {
-      // Keep placeholder
+      // Keep cached/placeholder data
     } finally {
       if (mounted) setState(() => _nutritionLoading = false);
     }

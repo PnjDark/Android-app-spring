@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/error_widgets.dart';
 import '../models/firebase_models.dart';
 import '../services/firestore_service.dart';
 import '../widgets/meal_history_item.dart';
@@ -166,30 +167,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 }
 
                 if (snapshot.hasError) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.error_outline,
-                          size: 48,
-                          color: Colors.red[400],
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Error loading meals',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          snapshot.error.toString(),
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Colors.grey[600],
-                              ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
+                  return ErrorStateWidget(
+                    message: friendlyError(snapshot.error!),
+                    icon: Icons.cloud_off,
+                    onRetry: () => setState(_loadMeals),
                   );
                 }
 

@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 
@@ -7,7 +8,15 @@ import 'firebase_options.dart';
 /// 3. Replace the GEMINI_API_KEY below with your key
 ///    (In production, use environment variables or secure storage)
 
-const String geminiApiKey = 'AIzaSyCIKIzi22_p-tpvzTgBm5-rQew0vRSNg'; // Replace with your actual API key
+/// Primary key + fallbacks. GeminiService rotates through these on failure.
+/// Replace with your actual keys; keep at least one valid entry.
+const List<String> geminiApiKeys = [
+  'AIzaSyCIKIzi22_p-tpvzTgBm5-rQew0vRSNg', // key 1 – replace
+  // 'AIzaSy_YOUR_SECOND_KEY_HERE',          // key 2 – add more as needed
+];
+
+/// Convenience getter used by legacy call-sites.
+String get geminiApiKey => geminiApiKeys.first;
 
 /// Firebase initialization
 /// 
@@ -32,6 +41,10 @@ class FirebaseConfig {
     try {
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
+      );
+      FirebaseFirestore.instance.settings = const Settings(
+        persistenceEnabled: true,
+        cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
       );
       print('✅ Firebase initialized successfully'); // ignore: avoid_print
     } catch (e) {

@@ -55,6 +55,11 @@ class FirestoreService {
     
     // Update daily stats
     await _updateDailyStats(userId, meal);
+
+    // Increment frequentFoods counter on user doc
+    await _db.collection('users').doc(userId).set({
+      'frequentFoods': {meal.foodName: FieldValue.increment(1)},
+    }, SetOptions(merge: true));
     
     return docRef.id;
   }
@@ -102,24 +107,14 @@ class FirestoreService {
     }
   }
 
-  /// Get top foods by frequency (last 30 days)
+  /// Get top foods by frequency — reads from denormalised user doc field
   Future<Map<String, int>> getFrequentFoods(String userId) async {
     try {
-      final thirtyDaysAgo = DateTime.now().subtract(Duration(days: 30));
-      final snapshot = await _db
-          .collection('users')
-          .doc(userId)
-          .collection('meals')
-          .where('timestamp', isGreaterThan: thirtyDaysAgo)
-          .get();
-
-      final frequency = <String, int>{};
-      for (var doc in snapshot.docs) {
-        final meal = MealModel.fromFirestore(doc);
-        frequency[meal.foodName] = (frequency[meal.foodName] ?? 0) + 1;
-      }
-
-      return frequency;
+      final doc = await _db.collection('users').doc(userId).get();
+      final data = doc.data();
+      if (data == null) return {};
+      final raw = data['frequentFoods'] as Map<String, dynamic>? ?? {};
+      return raw.map((k, v) => MapEntry(k, (v as num).toInt()));
     } catch (e) {
       print('Error fetching frequent foods: $e'); // ignore: avoid_print
       return {};

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../core/error_widgets.dart';
 import '../../services/auth_service.dart';
 
 class SignUpScreen extends StatefulWidget {
@@ -15,6 +16,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -27,6 +29,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   Future<void> _signUp() async {
     setState(() {
       _isLoading = true;
+      _errorMessage = null;
     });
 
     try {
@@ -35,21 +38,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
         _emailController.text,
         _passwordController.text,
       );
-      if (mounted) {
-        Navigator.of(context).pop();
-      }
+      if (mounted) Navigator.of(context).pop();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Sign up failed: ${e.toString()}')),
-        );
-      }
+      if (mounted) setState(() => _errorMessage = friendlyError(e));
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -87,6 +80,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 32),
+
+              // Error banner
+              if (_errorMessage != null) ...[  
+                ErrorBanner(
+                  message: _errorMessage!,
+                  onDismiss: () => setState(() => _errorMessage = null),
+                ),
+                const SizedBox(height: 16),
+              ],
 
               // Full Name Input
               TextField(

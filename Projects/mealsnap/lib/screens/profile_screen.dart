@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../core/app_theme.dart';
+import '../core/error_widgets.dart';
 import '../services/auth_service.dart';
 
 class ProfileScreen extends StatelessWidget {
@@ -313,8 +314,15 @@ class ProfileScreen extends StatelessWidget {
       width: double.infinity,
       child: ElevatedButton.icon(
         onPressed: () async {
-          await AuthService.signOut();
-          // GoRouter redirect handles navigation to /login
+          try {
+            await AuthService.signOut();
+          } catch (e) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(friendlyError(e))),
+              );
+            }
+          }
         },
         icon: const Icon(Symbols.logout),
         label: const Text('Logout'),

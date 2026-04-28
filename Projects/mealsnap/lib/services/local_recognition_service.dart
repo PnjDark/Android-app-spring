@@ -6,6 +6,10 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 import 'package:image/image.dart' as img;
 import 'package:tflite_flutter/tflite_flutter.dart';
 
+import '../models/firebase_models.dart';
+import '../services/nutrition_database_service.dart';
+import 'gemini_service.dart';
+
 /// Raw result from the local model -- used as a fast pre-pass before Gemini.
 class LocalLabelResult {
   final List<Map<String, dynamic>> foodLabels;
@@ -108,6 +112,65 @@ class LocalRecognitionService {
     final input = InputImage.fromFilePath(imageFile.path);
     final result = await _textRecognizer.processImage(input);
     return result.text;
+  }
+
+  /// Builds a [MealAnalysisResult] from TFLite labels + nutrition DB.
+  /// Used as a fallback when Gemini is unavailable.
+  MealAnalysisResult buildFallbackResult(LocalLabelResult localResult) {
+    if (localResult.foodLabels.isEmpty) {
+      return MealAnalysisResult(
+        mealName: 'Unknown Food',
+        mealCategory: 'meal',
+        confidence: 'low',
+        healthRating: 'moderate',
+        portionSize: 'Medium (~300 g)',
+        dietaryTags: const [],
+        ingredients: const [],
+        nutrition: NutritionBreakdown.empty(),
+        parseError: 'offline-estimate',
+      );
+    }
+
+    final topLabel = (localResult.foodLabels.first['label'] as String).toLowerCase();
+    final nutrition = NutritionDatabaseService.getNutritionInfo(topLabel);
+
+    // Build ingredient list from all detected labels that have DB entries.
+    final ingredients = localResult.foodLabels
+        .map((l) {
+          final name = (l['label'] as String).toLowerCase();
+          final n = NutritionDatabaseService.getNutritionInfo(name);
+          if (n == null) return null;
+          return DetectedIngredient(
+            name: name,
+            estimatedAmount: 'Medium serving',
+            calories: n.calories,
+            isMajor: l == localResult.foodLabels.first,
+          );
+        })
+        .whereType<DetectedIngredient>()
+        .toList();
+
+    return MealAnalysisResult(
+      mealName: topLabel,
+      mealCategory: 'meal',
+      confidence: 'low',
+      healthRating: 'moderate',
+      portionSize: 'Medium (~300 g)',
+      dietaryTags: const [],
+      ingredients: ingredients,
+      nutrition: nutrition != null
+          ? NutritionBreakdown(
+              totalCalories: nutrition.calories,
+              proteinG: nutrition.protein,
+              carbsG: nutrition.carbs,
+              fatG: nutrition.fat,
+              fiberG: 0,
+              sodiumMg: 0,
+              sugarG: 0,
+            )
+          : NutritionBreakdown.empty(),
+      parseError: 'offline-estimate',
+    );
   }
 
   Future<void> dispose() async {

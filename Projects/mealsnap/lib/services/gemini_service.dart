@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:image/image.dart' as img;
 
 // -----------------------------------------------------------------------------
 // Data models returned by GeminiService
@@ -186,24 +188,25 @@ class ReceiptAnalysisResult {
 // -----------------------------------------------------------------------------
 
 class GeminiService {
-  late final GenerativeModel _model;
+  final List<String> _keys;
+  int _keyIndex = 0;
 
-  GeminiService(String apiKey) {
-    _model = GenerativeModel(
-      model: 'gemini-1.5-flash',
-      apiKey: apiKey,
-      // Low temperature -> more deterministic, structured output.
-      generationConfig: GenerationConfig(
-        temperature: 0.1,
-      ),
-    );
-  }
+  GeminiService(String apiKey) : _keys = [apiKey];
+  GeminiService.withFallbacks(List<String> keys)
+      : assert(keys.isNotEmpty),
+        _keys = keys;
+
+  GenerativeModel _modelForKey(String key) => GenerativeModel(
+        model: 'gemini-1.5-flash',
+        apiKey: key,
+        generationConfig: GenerationConfig(temperature: 0.1),
+      );
 
   // -- Public API --------------------------------------------------------------
 
   /// Analyse a meal photo.
   Future<MealAnalysisResult> analyzeMealImage(File imageFile) async {
-    final bytes = await imageFile.readAsBytes();
+    final bytes = await _compressImage(imageFile);
     final image = DataPart('image/jpeg', bytes);
     const prompt = _mealPrompt;
     return _runMealRequest([Content.multi([TextPart(prompt), image])]);
@@ -211,7 +214,7 @@ class GeminiService {
 
   /// Identify raw ingredients from a photo.
   Future<MealAnalysisResult> analyzeIngredientsImage(File imageFile) async {
-    final bytes = await imageFile.readAsBytes();
+    final bytes = await _compressImage(imageFile);
     final image = DataPart('image/jpeg', bytes);
     const prompt = _ingredientsPrompt;
     return _runMealRequest([Content.multi([TextPart(prompt), image])]);
@@ -219,7 +222,7 @@ class GeminiService {
 
   /// OCR + parse a receipt photo.
   Future<ReceiptAnalysisResult> analyzeReceiptImage(File imageFile) async {
-    final bytes = await imageFile.readAsBytes();
+    final bytes = await _compressImage(imageFile, quality: 85);
     final image = DataPart('image/jpeg', bytes);
     const prompt = _receiptPrompt;
     return _runReceiptRequest([Content.multi([TextPart(prompt), image])]);
@@ -246,12 +249,37 @@ class GeminiService {
   }
 
   Future<String> _generate(List<Content> contents) async {
-    try {
-      final response = await _model.generateContent(contents);
-      return response.text ?? '';
-    } catch (e) {
-      throw Exception('Gemini API error: $e');
+    for (var attempt = 0; attempt < _keys.length; attempt++) {
+      final key = _keys[_keyIndex];
+      try {
+        final response = await _modelForKey(key)
+            .generateContent(contents)
+            .timeout(const Duration(seconds: 9));
+        return response.text ?? '';
+      } catch (e) {
+        _keyIndex = (_keyIndex + 1) % _keys.length;
+        if (attempt == _keys.length - 1) {
+          throw Exception('All Gemini API keys failed. Last error: $e');
+        }
+      }
     }
+    throw Exception('Gemini API error: no keys available');
+  }
+
+  /// Compress + resize image to max 800px on the long edge, JPEG quality 75.
+  /// Runs on a background isolate via [compute] to avoid jank.
+  static Future<Uint8List> _compressImage(File file, {int quality = 75}) async {
+    final bytes = await file.readAsBytes();
+    return compute(_compressBytes, _CompressArgs(bytes, quality));
+  }
+
+  static Uint8List _compressBytes(_CompressArgs args) {
+    final decoded = img.decodeImage(args.bytes);
+    if (decoded == null) return args.bytes;
+    final resized = decoded.width > decoded.height
+        ? img.copyResize(decoded, width: 800)
+        : img.copyResize(decoded, height: 800);
+    return Uint8List.fromList(img.encodeJpg(resized, quality: args.quality));
   }
 
   // -- Parsers -----------------------------------------------------------------
@@ -468,4 +496,11 @@ Rules:
 - Infer reasonable portion sizes if not stated.
 - All numeric fields must be numbers.
 ''';
+}
+
+// Passed to compute() — must be a top-level-friendly plain object.
+class _CompressArgs {
+  final Uint8List bytes;
+  final int quality;
+  const _CompressArgs(this.bytes, this.quality);
 }
