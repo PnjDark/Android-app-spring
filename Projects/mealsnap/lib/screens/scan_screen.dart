@@ -7,7 +7,7 @@ import 'dart:io';
 import '../firebase_config.dart';
 import '../models/firebase_models.dart';
 import '../services/firestore_service.dart';
-import '../services/gemini_service.dart';
+import '../services/ai_service.dart';
 import '../services/local_recognition_service.dart';
 
 enum ScanMode { meal, ingredients, receipt, voice }
@@ -20,7 +20,6 @@ class ScanScreen extends StatefulWidget {
   final ScanMode initialMode;
   final List<CameraDescription>? cameras;
   final LocalRecognitionService? localRecognitionService;
-  final GeminiService? geminiService;
   final CameraController? controller;
 
   const ScanScreen({
@@ -28,7 +27,6 @@ class ScanScreen extends StatefulWidget {
     this.initialMode = ScanMode.meal,
     this.cameras,
     this.localRecognitionService,
-    this.geminiService,
     this.controller,
   });
 
@@ -54,7 +52,7 @@ class _ScanScreenState extends State<ScanScreen>
 
   // -- Services -----------------------------------------------------------------
   late final LocalRecognitionService _localService;
-  late final GeminiService _geminiService;
+  late final AiService _aiService;
 
   // -- Animation for scan line --------------------------------------------------
   late final AnimationController _scanLineAnim;
@@ -67,8 +65,12 @@ class _ScanScreenState extends State<ScanScreen>
     _statusText = _idleStatus(_mode);
 
     _localService = widget.localRecognitionService ?? LocalRecognitionService();
-    _geminiService = widget.geminiService ??
-        GeminiService.withFallbacks(geminiApiKeys);
+    _aiService = AiService(
+      geminiKeys: geminiApiKeys,
+      openAiKey: openAiApiKey,
+      claudeKey: claudeApiKey,
+      groqKey: groqApiKey,
+    );
 
     _scanLineAnim = AnimationController(
       vsync: this,
@@ -205,9 +207,9 @@ class _ScanScreenState extends State<ScanScreen>
     bool usedFallback = false;
     try {
       if (_mode == ScanMode.ingredients) {
-        geminiResult = await _geminiService.analyzeIngredientsImage(image);
+        geminiResult = await _aiService.analyzeIngredientsImage(image);
       } else {
-        geminiResult = await _geminiService.analyzeMealImage(image);
+        geminiResult = await _aiService.analyzeMealImage(image);
       }
     } catch (_) {
       // Gemini failed -- fall back to local TFLite + nutrition DB.
@@ -249,9 +251,9 @@ class _ScanScreenState extends State<ScanScreen>
     setState(() => _statusText = 'Reading receipt text...');
     await _localService.recognizeReceiptText(image);
 
-    // Step 2 -- Gemini parses the OCR text into structured data.
+    // Step 2 -- AI parses the OCR text into structured data.
     setState(() => _statusText = 'Parsing receipt with AI...');
-    final result = await _geminiService.analyzeReceiptImage(image);
+    final result = await _aiService.analyzeReceiptImage(image);
 
     await _saveToFirestore(image.path, result.toJson());
 

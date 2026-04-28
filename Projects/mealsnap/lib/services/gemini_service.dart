@@ -245,7 +245,7 @@ class GeminiService {
   Future<ReceiptAnalysisResult> _runReceiptRequest(
       List<Content> contents) async {
     final raw = await _generate(contents);
-    return _parseReceiptResult(raw);
+    return parseReceiptResult(raw);
   }
 
   Future<String> _generate(List<Content> contents) async {
@@ -282,7 +282,14 @@ class GeminiService {
     return Uint8List.fromList(img.encodeJpg(resized, quality: args.quality));
   }
 
-  // -- Parsers -----------------------------------------------------------------
+  // -- Prompt constants (public so AiService can reuse them) -----------------
+
+  static const mealPrompt = _mealPrompt;
+  static const ingredientsPrompt = _ingredientsPrompt;
+  static const receiptPrompt = _receiptPrompt;
+  static const mealTextPreamble = _mealTextPreamble;
+
+  // -- Public parsers (used by AiService) -------------------------------------
 
   MealAnalysisResult parseMealResult(String raw) {
     try {
@@ -322,7 +329,7 @@ class GeminiService {
     }
   }
 
-  ReceiptAnalysisResult _parseReceiptResult(String raw) {
+  ReceiptAnalysisResult parseReceiptResult(String raw) {
     try {
       final json = _extractJson(raw);
       final items = (json['items'] as List<dynamic>? ?? [])

@@ -60,6 +60,9 @@ dependencies:
   # Gemini AI
   google_generative_ai: ^0.4.3
   
+  # HTTP client for OpenAI/Claude/Groq
+  http: ^1.2.0
+  
   # Local Storage
   shared_preferences: ^2.2.2
   material_symbols_icons: ^4.2928.1

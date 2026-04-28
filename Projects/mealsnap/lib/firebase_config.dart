@@ -2,21 +2,23 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 
-/// GEMINI API SETUP:
-/// 1. Go to https://makersuite.google.com/app/apikey
-/// 2. Create an API key
-/// 3. Replace the GEMINI_API_KEY below with your key
-///    (In production, use environment variables or secure storage)
+// ── AI Provider Keys ──────────────────────────────────────────────────────────
+// Keys are tried in order: Gemini → OpenAI → Claude → Groq → local TFLite.
+// Replace each placeholder with your real key before running the app.
 
-/// Primary key + fallbacks. GeminiService rotates through these on failure.
-/// Replace with your actual keys; keep at least one valid entry.
+/// Gemini — https://makersuite.google.com/app/apikey
 const List<String> geminiApiKeys = [
-  'AIzaSyCIKIzi22_p-tpvzTgBm5-rQew0vRSNg', // key 1 – replace
-  // 'AIzaSy_YOUR_SECOND_KEY_HERE',          // key 2 – add more as needed
+  '<YOUR_GEMINI_KEY>',
 ];
 
-/// Convenience getter used by legacy call-sites.
-String get geminiApiKey => geminiApiKeys.first;
+/// OpenAI — https://platform.openai.com/api-keys
+const String openAiApiKey = '<YOUR_OPENAI_KEY>';
+
+/// Anthropic Claude — https://console.anthropic.com/settings/keys
+const String claudeApiKey = '<YOUR_CLAUDE_KEY>';
+
+/// Groq — https://console.groq.com/keys
+const String groqApiKey = '<YOUR_GROQ_KEY>';
 
 /// Firebase initialization
 /// 
