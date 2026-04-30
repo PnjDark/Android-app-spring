@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/firebase_models.dart';
 import 'firestore_service.dart';
+import 'groq_service.dart';
 import 'nutrition_database_service.dart';
 
 /// Represents a personalized meal suggestion for the user
@@ -55,15 +56,13 @@ class PersonalizedSuggestion {
 /// Service for generating personalized meal suggestions based on user preferences and habits
 class SuggestionService {
   final FirestoreService _firestoreService;
+  final GroqService _groq;
 
-  // Cache for suggestions to avoid repeated calculations
   final Map<String, List<PersonalizedSuggestion>> _suggestionCache = {};
   final Map<String, DateTime> _cacheTimestamps = {};
-
-  // Cache duration: 1 hour
   static const Duration _cacheDuration = Duration(hours: 1);
 
-  SuggestionService(this._firestoreService);
+  SuggestionService(this._firestoreService, this._groq);
 
   /// Get personalized suggestions for a user
   Future<List<PersonalizedSuggestion>> getPersonalizedSuggestions(String userId) async {
@@ -117,10 +116,34 @@ class SuggestionService {
     // 4. Suggest healthy alternatives based on health goal
     suggestions.addAll(await _suggestHealthGoalAlternatives(userId, settings, frequentFoods));
 
-    // Limit to top 5 suggestions and sort by relevance
     suggestions.sort((a, b) => _getSuggestionPriority(b).compareTo(_getSuggestionPriority(a)));
+    final top = suggestions.take(5).toList();
 
-    return suggestions.take(5).toList();
+    // Enrich reason strings with Groq — falls back to originals if unavailable.
+    final enriched = await _groq.enrichReasons(
+      suggestions: top
+          .map((s) => (
+                foodName: s.foodName,
+                category: s.category,
+                originalReason: s.reason,
+              ))
+          .toList(),
+      healthGoal: user.settings.healthGoal,
+    );
+
+    return List.generate(
+      top.length,
+      (i) => PersonalizedSuggestion(
+        foodName: top[i].foodName,
+        reason: enriched[i],
+        category: top[i].category,
+        estimatedCalories: top[i].estimatedCalories,
+        estimatedProtein: top[i].estimatedProtein,
+        estimatedCarbs: top[i].estimatedCarbs,
+        estimatedFats: top[i].estimatedFats,
+        suggestedAt: top[i].suggestedAt,
+      ),
+    );
   }
 
   /// Suggest meals from user's frequent list that they haven't eaten recently

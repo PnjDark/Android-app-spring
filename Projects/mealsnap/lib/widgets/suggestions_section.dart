@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import '../firebase_config.dart';
 import '../services/firestore_service.dart';
+import '../services/groq_service.dart';
 import '../services/suggestion_service.dart';
 import 'suggestion_card.dart';
 
@@ -31,7 +33,10 @@ class _SuggestionsSectionState extends State<SuggestionsSection> {
   @override
   void initState() {
     super.initState();
-    _suggestionService = SuggestionService(widget.firestoreService);
+    _suggestionService = SuggestionService(
+      widget.firestoreService,
+      GroqService(groqApiKey),
+    );
     _loadSuggestions();
   }
 

@@ -8,7 +8,10 @@ import '../firebase_config.dart';
 import '../models/firebase_models.dart';
 import '../services/firestore_service.dart';
 import '../services/ai_service.dart';
+import '../services/groq_service.dart';
 import '../services/local_recognition_service.dart';
+import '../services/nutrition_api_service.dart';
+import '../widgets/meal_confirm_sheet.dart';
 
 enum ScanMode { meal, ingredients, receipt, voice }
 
@@ -49,6 +52,7 @@ class _ScanScreenState extends State<ScanScreen>
   String _resultText = '';
   bool _hasResult = false;
   bool _isOfflineResult = false;
+  String _lastImageSource = 'camera'; // 'camera' | 'gallery' | 'offline'
 
   // -- Services -----------------------------------------------------------------
   late final LocalRecognitionService _localService;
@@ -145,6 +149,7 @@ class _ScanScreenState extends State<ScanScreen>
       _hasResult = false;
       _overlayTags = [];
       _statusText = 'Capturing...';
+      _lastImageSource = 'camera';
     });
     try {
       final file = await _cameraController!.takePicture();
@@ -170,6 +175,7 @@ class _ScanScreenState extends State<ScanScreen>
       _hasResult = false;
       _overlayTags = [];
       _statusText = 'Loading image...';
+      _lastImageSource = 'gallery';
     });
     await _processImage(_lastImage!);
   }
@@ -188,8 +194,18 @@ class _ScanScreenState extends State<ScanScreen>
     }
   }
 
+  // Shared nutrition API service instance
+  final _nutritionApi = NutritionApiService(
+    fatSecretClientId: fatSecretClientId,
+    fatSecretClientSecret: fatSecretClientSecret,
+  );
+  final _groq = GroqService(groqApiKey);
+
   Future<void> _processFoodOrIngredients(File image) async {
-    // Step 1 -- fast ML Kit pass to populate overlay tags immediately.
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) { _setError('Not signed in'); return; }
+
+    // Step 1 — fast local TFLite pass → overlay tags immediately.
     setState(() => _statusText = 'Detecting food...');
     final localResult = await _localService.recognizeFoodImage(image);
     if (mounted) {
@@ -201,103 +217,123 @@ class _ScanScreenState extends State<ScanScreen>
       });
     }
 
-    // Step 2 -- Gemini deep analysis with local fallback.
-    setState(() => _statusText = 'Analysing with AI...');
-    MealAnalysisResult geminiResult;
+    // Step 2 — AI identification (name + confidence only, not nutrition).
+    setState(() => _statusText = 'Identifying food...');
+    String detectedName;
     bool usedFallback = false;
+    String scanSource = _lastImageSource;
     try {
-      if (_mode == ScanMode.ingredients) {
-        geminiResult = await _aiService.analyzeIngredientsImage(image);
-      } else {
-        geminiResult = await _aiService.analyzeMealImage(image);
+      final aiResult = _mode == ScanMode.ingredients
+          ? await _aiService.analyzeIngredientsImage(image)
+          : await _aiService.analyzeMealImage(image);
+      detectedName = aiResult.meal.mealName;
+      // Update overlay with AI-identified major ingredients.
+      final smartTags = aiResult.meal.majorIngredientNames;
+      if (mounted && smartTags.isNotEmpty) {
+        setState(() => _overlayTags = smartTags);
       }
     } catch (_) {
-      // Gemini failed -- fall back to local TFLite + nutrition DB.
-      setState(() => _statusText = 'Using offline estimate...');
-      geminiResult = _localService.buildFallbackResult(localResult);
+      // All AI providers failed — use top TFLite label as name.
       usedFallback = true;
+      scanSource = 'offline';
+      detectedName = localResult.foodLabels.isNotEmpty
+          ? (localResult.foodLabels.first['label'] as String)
+          : 'Unknown Food';
     }
 
-    // Step 3 -- update overlay tags.
-    final smartTags = geminiResult.majorIngredientNames;
-    if (mounted) {
+    // Step 3 — resolve verified nutrition from database (truth layer).
+    setState(() => _statusText = 'Looking up nutrition...');
+    final nutrition = await _nutritionApi.resolve(detectedName);
+
+    // Step 4 — stop spinner, show confirm sheet.
+    if (!mounted) return;
+    setState(() => _isAnalyzing = false);
+
+    final confirmed = await showMealConfirmSheet(
+      // ignore: use_build_context_synchronously
+      context,
+      detectedName: detectedName,
+      nutrition: nutrition,
+      source: scanSource,
+      userId: user.uid,
+    );
+
+    if (confirmed == null) {
+      // User discarded — reset to idle.
       setState(() {
-        _overlayTags = smartTags.isNotEmpty ? smartTags : _overlayTags;
+        _statusText = _idleStatus(_mode);
+        _overlayTags = [];
       });
+      return;
     }
 
-    // Step 4 -- save to Firestore.
-    final combined = {
-      'local_labels': localResult.foodLabels,
-      'gemini_analysis': geminiResult.toJson(),
-      'enhanced': !usedFallback,
-    };
-    await _saveToFirestore(image.path, combined);
+    // Step 5 — save confirmed meal to Firestore.
+    await FirestoreService().addMeal(user.uid, confirmed);
 
-    // Step 5 -- display result.
+    // Step 6 — Groq insight (non-blocking, appended when ready).
+    _fetchAndAppendInsight(confirmed, nutrition, user.uid);
+
     if (mounted) {
       setState(() {
-        _isAnalyzing = false;
         _hasResult = true;
         _isOfflineResult = usedFallback;
         _statusText = _idleStatus(_mode);
-        _resultText = _formatMealResult(geminiResult);
+        _resultText = _formatConfirmedResult(confirmed, nutrition);
       });
     }
   }
 
   Future<void> _processReceipt(File image) async {
-    // Step 1 -- OCR text via ML Kit.
-    setState(() => _statusText = 'Reading receipt text...');
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) { _setError('Not signed in'); return; }
+
+    // Step 1 — OCR via ML Kit.
+    setState(() => _statusText = 'Reading receipt...');
     await _localService.recognizeReceiptText(image);
 
-    // Step 2 -- AI parses the OCR text into structured data.
-    setState(() => _statusText = 'Parsing receipt with AI...');
+    // Step 2 — AI structures the receipt.
+    setState(() => _statusText = 'Parsing receipt...');
     final result = await _aiService.analyzeReceiptImage(image);
 
-    await _saveToFirestore(image.path, result.toJson());
+    final foodItems = result.items.where((i) => i.isFood).toList();
+    if (mounted) {
+      setState(() {
+        _overlayTags = foodItems.take(4).map((i) => i.name).toList();
+        _isAnalyzing = false;
+      });
+    }
+
+    // Step 3 — confirm sheet for the first food item (representative).
+    if (!mounted) return;
+    final firstName = foodItems.isNotEmpty ? foodItems.first.name : 'Receipt items';
+    final nutrition = await _nutritionApi.resolve(firstName);
+
+    final confirmed = await showMealConfirmSheet(
+      // ignore: use_build_context_synchronously
+      context,
+      detectedName: firstName,
+      nutrition: nutrition,
+      source: 'receipt',
+      userId: user.uid,
+    );
+
+    if (confirmed == null) {
+      setState(() => _statusText = _idleStatus(_mode));
+      return;
+    }
+
+    await FirestoreService().addMeal(user.uid, confirmed);
+
+    _fetchAndAppendInsight(confirmed, nutrition, user.uid);
 
     if (mounted) {
       setState(() {
-        _isAnalyzing = false;
         _hasResult = true;
-        _overlayTags = result.items
-            .where((i) => i.isFood)
-            .take(4)
-            .map((i) => i.name)
-            .toList();
+        _isOfflineResult = false;
         _statusText = _idleStatus(_mode);
         _resultText = _formatReceiptResult(result);
       });
     }
-  }
-
-  // -- Firestore ----------------------------------------------------------------
-
-  Future<void> _saveToFirestore(
-      String imagePath, Map<String, dynamic> analysis) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    // Extract structured nutrition from the Gemini result stored in analysis.
-    final gemini = analysis['gemini_analysis'] as Map<String, dynamic>?;
-    final nutrition =
-        gemini != null ? (gemini['nutrition'] as Map<String, dynamic>?) : null;
-
-    final meal = MealModel(
-      id: '',
-      userId: user.uid,
-      foodName: gemini?['meal_name'] as String? ?? 'Unknown Meal',
-      calories: (nutrition?['total_calories'] as num?)?.toDouble() ?? 0,
-      protein: (nutrition?['protein_g'] as num?)?.toDouble() ?? 0,
-      carbs: (nutrition?['carbs_g'] as num?)?.toDouble() ?? 0,
-      fats: (nutrition?['fat_g'] as num?)?.toDouble() ?? 0,
-      timestamp: DateTime.now(),
-      source: _mode == ScanMode.receipt ? 'receipt' : 'camera',
-      notes: gemini?['portion_size'] as String?,
-    );
-
-    await FirestoreService().addMeal(user.uid, meal);
   }
 
   // -- Helpers ------------------------------------------------------------------
@@ -345,39 +381,38 @@ class _ScanScreenState extends State<ScanScreen>
     }
   }
 
+  // -- Groq insight -----------------------------------------------------------
+
+  Future<void> _fetchAndAppendInsight(
+      MealModel meal, ResolvedNutrition nutrition, String userId) async {
+    // Load user goal from Firestore to personalise the insight.
+    final user = await FirestoreService().getUser(userId);
+    final goal = user?.settings.healthGoal ?? 'maintain';
+
+    final insight = await _groq.mealInsight(
+      mealName: meal.foodName,
+      calories: meal.calories,
+      proteinG: meal.protein,
+      carbsG: meal.carbs,
+      fatG: meal.fats,
+      healthGoal: goal,
+    );
+
+    if (insight != null && mounted && _hasResult) {
+      setState(() => _resultText = '$_resultText\n\n💡 $insight');
+    }
+  }
+
   // -- Result formatting --------------------------------------------------------
 
-  String _formatMealResult(MealAnalysisResult r) {
-    final n = r.nutrition;
-    final ings = r.ingredients.isNotEmpty
-        ? r.ingredients.map((i) => i.name).join(', ')
-        : 'None detected';
-    final tags =
-        r.dietaryTags.isNotEmpty ? r.dietaryTags.join(' - ') : '';
-
-    final confidenceEmoji = switch (r.confidence) {
-      'high' => '[HIGH]',
-      'medium' => '[MED]',
-      _ => '[LOW]',
-    };
-    final healthEmoji = switch (r.healthRating) {
-      'excellent' => '[EXCELLENT]',
-      'good' => '[GOOD]',
-      'moderate' => '[MED]',
-      _ => '[LOW]',
-    };
-
-    return '${r.mealName}  $confidenceEmoji ${r.confidence} confidence\n'
-        '${r.mealCategory.toUpperCase()}  -  ${r.portionSize}\n'
-        '$healthEmoji ${r.healthRating.toUpperCase()}'
-        '${tags.isNotEmpty ? '  -  $tags' : ''}\n\n'
-        ' ${n.totalCalories.round()} kcal\n'
-        ' Protein ${n.proteinG.round()} g  '
-        ' Carbs ${n.carbsG.round()} g  '
-        ' Fat ${n.fatG.round()} g\n'
-        ' Fibre ${n.fiberG.round()} g  '
-        ' Sodium ${n.sodiumMg.round()} mg\n\n'
-        ' Ingredients:\n$ings';
+  String _formatConfirmedResult(MealModel meal, ResolvedNutrition nutrition) {
+    return '${meal.foodName}\n'
+        '${nutrition.servingDescription} × ${meal.notes?.split('×').last.split('|').first.trim() ?? '1'}\n\n'
+        ' ${meal.calories.round()} kcal\n'
+        ' Protein ${meal.protein.round()} g  '
+        ' Carbs ${meal.carbs.round()} g  '
+        ' Fat ${meal.fats.round()} g\n'
+        ' Source: ${nutrition.sourceLabel}';
   }
 
   String _formatReceiptResult(ReceiptAnalysisResult r) {

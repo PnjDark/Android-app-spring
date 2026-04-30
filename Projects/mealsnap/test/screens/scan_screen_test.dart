@@ -8,27 +8,23 @@ import 'package:mealsnap/screens/scan_screen.dart';
 import 'package:mockito/mockito.dart';
 import 'package:mockito/annotations.dart';
 import 'package:mealsnap/services/local_recognition_service.dart';
-import 'package:mealsnap/services/gemini_service.dart';
 
 import 'scan_screen_test.mocks.dart';
 
 @GenerateNiceMocks([
   MockSpec<CameraDescription>(),
   MockSpec<LocalRecognitionService>(),
-  MockSpec<GeminiService>(),
   MockSpec<CameraController>()
 ])
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late MockLocalRecognitionService mockLocalRecognitionService;
-  late MockGeminiService mockGeminiService;
   late MockCameraDescription mockCameraDescription;
   late MockCameraController mockCameraController;
 
   setUp(() {
     mockLocalRecognitionService = MockLocalRecognitionService();
-    mockGeminiService = MockGeminiService();
     mockCameraDescription = MockCameraDescription();
     mockCameraController = MockCameraController();
 
@@ -68,8 +64,7 @@ void main() {
         home: ScanScreen(
           cameras: [mockCameraDescription],
           localRecognitionService: mockLocalRecognitionService,
-          geminiService: mockGeminiService,
-          controller: mockCameraController, // Injected controller
+          controller: mockCameraController,
         ),
       ),
     );

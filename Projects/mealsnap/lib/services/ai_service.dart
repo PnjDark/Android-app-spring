@@ -20,6 +20,12 @@ import 'gemini_service.dart';
 
 enum AiProvider { gemini, openAi, claude, groq }
 
+class AiResult {
+  final MealAnalysisResult meal;
+  final AiProvider provider;
+  const AiResult(this.meal, this.provider);
+}
+
 /// Unified AI service.
 /// Tries providers in order: Gemini → OpenAI → Claude → Groq.
 /// Any provider whose key is empty/placeholder is skipped automatically.
@@ -43,22 +49,17 @@ class AiService {
 
   // ── Public API ──────────────────────────────────────────────────────────────
 
-  Future<MealAnalysisResult> analyzeMealImage(File imageFile) async {
+  /// Returns the meal result AND which provider succeeded.
+  Future<AiResult> analyzeMealImage(File imageFile) async {
     final bytes = await _compressImage(imageFile);
-    return _runWithFallback(
-      prompt: GeminiService.mealPrompt,
-      imageBytes: bytes,
-      parser: _parseMeal,
-    );
+    return _runWithFallbackTracked(
+        prompt: GeminiService.mealPrompt, imageBytes: bytes);
   }
 
-  Future<MealAnalysisResult> analyzeIngredientsImage(File imageFile) async {
+  Future<AiResult> analyzeIngredientsImage(File imageFile) async {
     final bytes = await _compressImage(imageFile);
-    return _runWithFallback(
-      prompt: GeminiService.ingredientsPrompt,
-      imageBytes: bytes,
-      parser: _parseMeal,
-    );
+    return _runWithFallbackTracked(
+        prompt: GeminiService.ingredientsPrompt, imageBytes: bytes);
   }
 
   Future<ReceiptAnalysisResult> analyzeReceiptImage(File imageFile) async {
@@ -70,22 +71,31 @@ class AiService {
     return _parseReceipt(raw);
   }
 
-  Future<MealAnalysisResult> analyzeMealText(String description) async {
+  Future<AiResult> analyzeMealText(String description) async {
     final prompt =
         '${GeminiService.mealTextPreamble}\n\nMeal description: "$description"';
-    final raw = await _runWithFallbackRaw(prompt: prompt, imageBytes: null);
-    return _parseMeal(raw);
+    return _runWithFallbackTracked(prompt: prompt, imageBytes: null);
   }
 
   // ── Fallback chain ──────────────────────────────────────────────────────────
 
-  Future<T> _runWithFallback<T>({
+  Future<AiResult> _runWithFallbackTracked({
     required String prompt,
     required Uint8List? imageBytes,
-    required T Function(String) parser,
   }) async {
-    final raw = await _runWithFallbackRaw(prompt: prompt, imageBytes: imageBytes);
-    return parser(raw);
+    final providers = _enabledProviders();
+    Exception? lastError;
+
+    for (final provider in providers) {
+      try {
+        final raw = await _callProvider(
+            provider: provider, prompt: prompt, imageBytes: imageBytes);
+        return AiResult(_parseMeal(raw), provider);
+      } catch (e) {
+        lastError = Exception('[$provider] $e');
+      }
+    }
+    throw lastError ?? Exception('All AI providers failed');
   }
 
   Future<String> _runWithFallbackRaw({
@@ -291,14 +301,15 @@ class AiService {
     }
   }
 
-  MealAnalysisResult _parseMeal(String raw) {
-    // Delegate to existing GeminiService parser — same JSON schema for all providers.
-    return GeminiService(geminiApiKeys.first).parseMealResult(raw);
-  }
+  // Parsers are pure JSON functions — no API key needed.
+  MealAnalysisResult _parseMeal(String raw) =>
+      _sharedParser.parseMealResult(raw);
 
-  ReceiptAnalysisResult _parseReceipt(String raw) {
-    return GeminiService(geminiApiKeys.first).parseReceiptResult(raw);
-  }
+  ReceiptAnalysisResult _parseReceipt(String raw) =>
+      _sharedParser.parseReceiptResult(raw);
+
+  // Single parser instance with a dummy key — only used for JSON parsing.
+  static final _sharedParser = GeminiService('_parser_only_');
 
   static Future<Uint8List> _compressImage(File file, {int quality = 75}) async {
     final bytes = await file.readAsBytes();

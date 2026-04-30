@@ -20,6 +20,11 @@ const String claudeApiKey = '<YOUR_CLAUDE_KEY>';
 /// Groq — https://console.groq.com/keys
 const String groqApiKey = '<YOUR_GROQ_KEY>';
 
+/// FatSecret Platform API — https://platform.fatsecret.com/api/
+/// Free tier: register and get OAuth2 client credentials.
+const String fatSecretClientId = '<YOUR_FATSECRET_CLIENT_ID>';
+const String fatSecretClientSecret = '<YOUR_FATSECRET_CLIENT_SECRET>';
+
 /// Firebase initialization
 /// 
 /// SETUP INSTRUCTIONS:
