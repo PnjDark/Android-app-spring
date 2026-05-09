@@ -59,10 +59,6 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>NSCameraUsageDescription</key>
-	<string>MealSnap+ needs camera access to scan meals, receipts, and ingredient labels.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>MealSnap+ uses voice capture for quick meal input.</string>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
